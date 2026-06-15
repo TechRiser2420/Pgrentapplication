@@ -117,6 +117,26 @@
                     <i data-lucide="shield-alert"></i>
                     <span>Complaints</span>
                 </li>
+                <li data-view="users" id="nav-users" style="display: none;">
+                    <i data-lucide="shield-check"></i>
+                    <span>System Users</span>
+                </li>
+                <li data-view="audit" id="nav-audit" style="display: none;">
+                    <i data-lucide="scroll-text"></i>
+                    <span>Audit Log</span>
+                </li>
+                <li data-view="announcements" id="nav-announcements" style="display: none;">
+                    <i data-lucide="megaphone"></i>
+                    <span>Announcements</span>
+                </li>
+                <li data-view="financials" id="nav-financials" style="display: none;">
+                    <i data-lucide="bar-chart-2"></i>
+                    <span>Financials</span>
+                </li>
+                <li data-view="superadmin" id="nav-superadmin" style="display: none;">
+                    <i data-lucide="settings-2"></i>
+                    <span>Super Settings</span>
+                </li>
             </ul>
 
             <!-- Clock Widget -->
@@ -439,7 +459,279 @@
                 </div>
             </section>
 
+            <!-- ====================================================
+                 VIEW 5: SYSTEM USERS / ADMINISTRATORS
+                 ==================================================== -->
+            <section id="view-users" class="content-section">
+                <div class="action-filter-bar" style="margin-bottom: 25px;">
+                    <div class="filter-left">
+                        <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="shield-check" style="color: var(--accent);"></i> System Access Directory
+                        </h3>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <span style="font-size: 0.8rem; color: var(--text-secondary); font-weight: 500;">Authorized Administrators</span>
+                        <button class="btn-primary-action" onclick="openUserModal()" style="display:flex;align-items:center;gap:6px;padding:8px 16px;font-size:0.82rem;">
+                            <i data-lucide="user-plus" style="width:15px;height:15px;"></i> Add User
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive-wrapper">
+                    <table class="custom-glass-table">
+                        <thead><tr>
+                            <th>Manager Name</th><th>Username</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th>
+                        </tr></thead>
+                        <tbody id="user-table-rows"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ====================================================
+                 VIEW 6: AUDIT LOG
+                 ==================================================== -->
+            <section id="view-audit" class="content-section">
+                <div class="action-filter-bar" style="margin-bottom:25px;">
+                    <div class="filter-left">
+                        <h3 style="font-size:1.1rem;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+                            <i data-lucide="scroll-text" style="color:var(--accent);"></i> Audit Trail
+                        </h3>
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <select id="audit-filter-user" onchange="renderAuditLog()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--glass-bg);color:var(--text-primary);font-size:0.82rem;">
+                            <option value="">All Users</option>
+                        </select>
+                        <select id="audit-filter-action" onchange="renderAuditLog()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--glass-bg);color:var(--text-primary);font-size:0.82rem;">
+                            <option value="">All Actions</option>
+                            <option value="ADD">Add</option>
+                            <option value="EDIT">Edit</option>
+                            <option value="DELETE">Delete</option>
+                            <option value="LOGIN">Login</option>
+                            <option value="LOGOUT">Logout</option>
+                        </select>
+                        <button onclick="exportAuditCSV()" class="btn-primary-action" style="display:flex;align-items:center;gap:6px;padding:8px 14px;font-size:0.82rem;">
+                            <i data-lucide="download" style="width:14px;height:14px;"></i> Export CSV
+                        </button>
+                        <button onclick="clearAuditLog()" style="padding:8px 14px;border-radius:8px;border:1px solid #ef4444;background:none;color:#ef4444;cursor:pointer;font-size:0.82rem;">Clear Log</button>
+                    </div>
+                </div>
+                <div class="table-responsive-wrapper">
+                    <table class="custom-glass-table">
+                        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
+                        <tbody id="audit-table-rows"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ====================================================
+                 VIEW 7: ANNOUNCEMENTS
+                 ==================================================== -->
+            <section id="view-announcements" class="content-section">
+                <div class="action-filter-bar" style="margin-bottom:25px;">
+                    <div class="filter-left">
+                        <h3 style="font-size:1.1rem;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+                            <i data-lucide="megaphone" style="color:var(--accent);"></i> Announcements & Notices
+                        </h3>
+                    </div>
+                </div>
+                <div style="display:grid;gap:20px;">
+                    <div class="stat-card" style="padding:20px;">
+                        <h4 style="margin-bottom:14px;color:var(--text-primary);font-size:0.95rem;">Post New Announcement</h4>
+                        <div style="display:flex;flex-direction:column;gap:12px;">
+                            <input id="announce-title" type="text" placeholder="Announcement Title" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border-color);background:var(--glass-bg);color:var(--text-primary);font-size:0.9rem;width:100%;box-sizing:border-box;">
+                            <textarea id="announce-body" rows="3" placeholder="Write your announcement here..." style="padding:10px 14px;border-radius:8px;border:1px solid var(--border-color);background:var(--glass-bg);color:var(--text-primary);font-size:0.9rem;width:100%;box-sizing:border-box;resize:vertical;"></textarea>
+                            <div style="display:flex;gap:10px;align-items:center;">
+                                <select id="announce-priority" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--glass-bg);color:var(--text-primary);font-size:0.82rem;">
+                                    <option value="info">ℹ️ Info</option>
+                                    <option value="warning">⚠️ Warning</option>
+                                    <option value="urgent">🚨 Urgent</option>
+                                </select>
+                                <button onclick="postAnnouncement()" class="btn-primary-action" style="padding:9px 20px;font-size:0.85rem;">Post Announcement</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="announcements-list" style="display:flex;flex-direction:column;gap:12px;"></div>
+                </div>
+            </section>
+
+            <!-- ====================================================
+                 VIEW 8: FINANCIALS
+                 ==================================================== -->
+            <section id="view-financials" class="content-section">
+                <div class="action-filter-bar" style="margin-bottom:25px;">
+                    <div class="filter-left">
+                        <h3 style="font-size:1.1rem;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+                            <i data-lucide="bar-chart-2" style="color:var(--accent);"></i> Financial Overview
+                        </h3>
+                    </div>
+                    <button onclick="exportFinancialsCSV()" class="btn-primary-action" style="display:flex;align-items:center;gap:6px;padding:8px 14px;font-size:0.82rem;">
+                        <i data-lucide="download" style="width:14px;height:14px;"></i> Export CSV
+                    </button>
+                </div>
+                <div class="stats-grid" style="margin-bottom:24px;">
+                    <div class="stat-card"><div class="stat-card-header"><span class="stat-label">Total Revenue</span><i data-lucide="indian-rupee" class="stat-icon"></i></div><div class="stat-value" id="fin-total-revenue">₹0</div><div class="stat-sub">All time collected</div></div>
+                    <div class="stat-card"><div class="stat-card-header"><span class="stat-label">This Month</span><i data-lucide="calendar" class="stat-icon"></i></div><div class="stat-value" id="fin-month-revenue">₹0</div><div class="stat-sub">Current month</div></div>
+                    <div class="stat-card"><div class="stat-card-header"><span class="stat-label">Pending Dues</span><i data-lucide="alert-circle" class="stat-icon"></i></div><div class="stat-value" id="fin-pending-dues" style="color:#ef4444;">₹0</div><div class="stat-sub">Uncollected rent</div></div>
+                    <div class="stat-card"><div class="stat-card-header"><span class="stat-label">Occupancy Rate</span><i data-lucide="percent" class="stat-icon"></i></div><div class="stat-value" id="fin-occupancy">0%</div><div class="stat-sub">Beds filled</div></div>
+                </div>
+                <div class="table-responsive-wrapper">
+                    <table class="custom-glass-table">
+                        <thead><tr><th>Tenant</th><th>Room</th><th>Rent (₹)</th><th>Paid (₹)</th><th>Due (₹)</th><th>Status</th></tr></thead>
+                        <tbody id="fin-table-rows"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ====================================================
+                 VIEW 9: SUPER ADMIN SETTINGS
+                 ==================================================== -->
+            <section id="view-superadmin" class="content-section">
+                <div class="action-filter-bar" style="margin-bottom:25px;">
+                    <div class="filter-left">
+                        <h3 style="font-size:1.1rem;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+                            <i data-lucide="settings-2" style="color:var(--accent);"></i> Super Admin Settings
+                        </h3>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+                    <!-- PG Info -->
+                    <div class="stat-card" style="padding:20px;">
+                        <h4 style="margin-bottom:14px;color:var(--text-primary);font-size:0.95rem;display:flex;align-items:center;gap:8px;"><i data-lucide="building-2" style="width:16px;height:16px;color:var(--accent);"></i> PG Information</h4>
+                        <div style="display:flex;flex-direction:column;gap:10px;">
+                            <div class="form-input-group"><label>PG Name</label><input id="sa-pg-name" type="text" placeholder="My PG Name" class="form-control"></div>
+                            <div class="form-input-group"><label>Contact Phone</label><input id="sa-pg-phone" type="text" placeholder="+91 99999 00000" class="form-control"></div>
+                            <div class="form-input-group"><label>Address</label><input id="sa-pg-address" type="text" placeholder="123 Street, City" class="form-control"></div>
+                            <button onclick="savePGInfo()" class="btn-primary-action" style="padding:9px;margin-top:4px;">Save PG Info</button>
+                        </div>
+                    </div>
+                    <!-- Late Fee Rules -->
+                    <div class="stat-card" style="padding:20px;">
+                        <h4 style="margin-bottom:14px;color:var(--text-primary);font-size:0.95rem;display:flex;align-items:center;gap:8px;"><i data-lucide="indian-rupee" style="width:16px;height:16px;color:var(--accent);"></i> Late Fee Rules</h4>
+                        <div style="display:flex;flex-direction:column;gap:10px;">
+                            <div class="form-input-group"><label>Due Day of Month</label><input id="sa-due-day" type="number" min="1" max="28" placeholder="5" class="form-control"></div>
+                            <div class="form-input-group"><label>Late Fee per Day (₹)</label><input id="sa-late-fee" type="number" min="0" placeholder="100" class="form-control"></div>
+                            <div class="form-input-group"><label>Grace Period (days)</label><input id="sa-grace" type="number" min="0" placeholder="2" class="form-control"></div>
+                            <button onclick="saveLateFeeRules()" class="btn-primary-action" style="padding:9px;margin-top:4px;">Save Rules</button>
+                        </div>
+                    </div>
+                    <!-- Security -->
+                    <div class="stat-card" style="padding:20px;">
+                        <h4 style="margin-bottom:14px;color:var(--text-primary);font-size:0.95rem;display:flex;align-items:center;gap:8px;"><i data-lucide="lock" style="width:16px;height:16px;color:var(--accent);"></i> Security</h4>
+                        <div style="display:flex;flex-direction:column;gap:10px;">
+                            <div class="form-input-group"><label>Change Your Password</label><input id="sa-new-password" type="password" placeholder="New password" class="form-control"></div>
+                            <div class="form-input-group"><label>Confirm Password</label><input id="sa-confirm-password" type="password" placeholder="Confirm password" class="form-control"></div>
+                            <button onclick="changeOwnPassword()" class="btn-primary-action" style="padding:9px;margin-top:4px;">Update Password</button>
+                        </div>
+                    </div>
+                    <!-- Maintenance Mode -->
+                    <div class="stat-card" style="padding:20px;">
+                        <h4 style="margin-bottom:14px;color:var(--text-primary);font-size:0.95rem;display:flex;align-items:center;gap:8px;"><i data-lucide="wrench" style="width:16px;height:16px;color:var(--accent);"></i> System Controls</h4>
+                        <div style="display:flex;flex-direction:column;gap:14px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--glass-bg);border-radius:8px;border:1px solid var(--border-color);">
+                                <div><div style="font-size:0.88rem;font-weight:600;color:var(--text-primary);">Maintenance Mode</div><div style="font-size:0.75rem;color:var(--text-secondary);">Hides content from non-admins</div></div>
+                                <label style="position:relative;display:inline-block;width:44px;height:24px;"><input type="checkbox" id="sa-maintenance" onchange="toggleMaintenanceMode(this.checked)" style="opacity:0;width:0;height:0;"><span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--border-color);border-radius:24px;transition:.3s;" id="maintenance-slider"></span></label>
+                            </div>
+                            <button onclick="exportAllDataCSV()" style="padding:10px;border-radius:8px;border:1px solid var(--accent);background:none;color:var(--accent);cursor:pointer;font-size:0.85rem;font-weight:600;">📥 Export All Data (CSV)</button>
+                            <button onclick="clearAllData()" style="padding:10px;border-radius:8px;border:1px solid #ef4444;background:none;color:#ef4444;cursor:pointer;font-size:0.85rem;font-weight:600;">🗑️ Clear All App Data</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
         </main>
+    </div>
+
+    <!-- ANNOUNCEMENT BANNER (shown on dashboard) -->
+    <div id="announce-banner" style="display:none;position:fixed;top:70px;left:0;right:0;z-index:999;padding:12px 24px;font-size:0.88rem;font-weight:600;text-align:center;"></div>
+
+    <!-- OWNER DETAIL MODAL -->
+    <div id="owner-modal" class="modal-overlay">
+        <div class="modal-content-box" style="max-width:750px;max-height:90vh;overflow-y:auto;">
+            <div class="modal-header-row">
+                <h3 id="owner-modal-title" class="modal-title" style="display:flex;align-items:center;gap:10px;">
+                    <i data-lucide="user-circle" style="width:20px;height:20px;color:var(--accent);"></i>
+                    <span id="owner-modal-name">Owner Details</span>
+                </h3>
+                <button class="modal-close-btn" onclick="closeOwnerModal()"><i data-lucide="x"></i></button>
+            </div>
+
+            <!-- Summary Cards -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;">
+                <div class="stat-card" style="padding:14px;">
+                    <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Total Tenants</div>
+                    <div id="om-tenants" style="font-size:1.5rem;font-weight:700;color:var(--accent);">0</div>
+                </div>
+                <div class="stat-card" style="padding:14px;">
+                    <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Total Rooms</div>
+                    <div id="om-rooms" style="font-size:1.5rem;font-weight:700;color:var(--accent);">0</div>
+                </div>
+                <div class="stat-card" style="padding:14px;">
+                    <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Total Collected</div>
+                    <div id="om-collected" style="font-size:1.3rem;font-weight:700;color:#10b981;">₹0</div>
+                </div>
+                <div class="stat-card" style="padding:14px;">
+                    <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Pending Dues</div>
+                    <div id="om-dues" style="font-size:1.3rem;font-weight:700;color:#ef4444;">₹0</div>
+                </div>
+            </div>
+
+            <!-- Tenants Table -->
+            <div style="margin-top:20px;">
+                <h4 style="font-size:0.9rem;font-weight:700;color:var(--text-primary);margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+                    <i data-lucide="users" style="width:15px;height:15px;color:var(--accent);"></i> Tenant List
+                </h4>
+                <div class="table-responsive-wrapper">
+                    <table class="custom-glass-table">
+                        <thead><tr><th>Name</th><th>Room</th><th>Phone</th><th>Rent (₹)</th><th>Paid (₹)</th><th>Due (₹)</th><th>Status</th></tr></thead>
+                        <tbody id="om-tenant-rows"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Rooms Table -->
+            <div style="margin-top:20px;">
+                <h4 style="font-size:0.9rem;font-weight:700;color:var(--text-primary);margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+                    <i data-lucide="bed" style="width:15px;height:15px;color:var(--accent);"></i> Room List
+                </h4>
+                <div class="table-responsive-wrapper">
+                    <table class="custom-glass-table">
+                        <thead><tr><th>Room No</th><th>Type</th><th>Total Beds</th><th>Occupied</th><th>Vacant</th><th>Status</th></tr></thead>
+                        <tbody id="om-room-rows"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div style="margin-top:16px;text-align:right;">
+                <button onclick="closeOwnerModal()" style="padding:9px 20px;border-radius:8px;border:1px solid var(--border-color);background:var(--glass-bg);color:var(--text-primary);cursor:pointer;font-size:0.85rem;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- USER ADD/EDIT MODAL -->
+    <div id="user-modal" class="modal-overlay">
+        <div class="modal-content-box" style="max-width:480px;">
+            <div class="modal-header-row">
+                <h3 id="user-modal-title" class="modal-title">Add New User</h3>
+                <button class="modal-close-btn" onclick="closeUserModal()"><i data-lucide="x"></i></button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px;margin-top:16px;">
+                <input type="hidden" id="user-modal-index">
+                <div class="form-input-group"><label>Full Name *</label><input id="user-modal-fullname" type="text" placeholder="e.g. John Doe" class="form-control"></div>
+                <div class="form-input-group"><label>Username *</label><input id="user-modal-username" type="text" placeholder="e.g. john" class="form-control"></div>
+                <div class="form-input-group"><label>Password *</label><input id="user-modal-password" type="text" placeholder="e.g. John@123" class="form-control"></div>
+                <div class="form-input-group"><label>Role *</label>
+                    <select id="user-modal-role" class="form-control">
+                        <option value="Super Admin">Super Admin</option>
+                        <option value="Admin">Admin</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Viewer">Viewer</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:8px;">
+                    <button class="btn-primary-action" onclick="saveUser()" style="flex:1;padding:10px;">Save User</button>
+                    <button onclick="closeUserModal()" style="flex:1;padding:10px;background:var(--glass-bg);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);cursor:pointer;">Cancel</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- ====================================================
@@ -730,6 +1022,10 @@
     <!-- html2pdf Export System -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
+    <!-- Firebase App and Realtime Database Compat SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
     <!-- Script Logic -->
     <script src="script.js"></script>
 </body>
