@@ -1,7 +1,14 @@
-/**
- * PGSmart Rental Application - PG Rental Management System
- * Client-Side JavaScript Logic
- */
+// Global Firebase configuration. Put your project credentials here:
+const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyC8X_HBbut8VPsjQtqTfJ38B37zxcYT5ek",
+    authDomain: "pgsmart-rental.firebaseapp.com",
+    projectId: "pgsmart-rental",
+    databaseURL: "https://pgsmart-rental-default-rtdb.firebaseio.com",
+    storageBucket: "pgsmart-rental.firebasestorage.app",
+    messagingSenderId: "782522985780",
+    appId: "1:782522985780:web:46bd0590b69bae58f00961",
+    measurementId: "G-40YD1RRDJ5"
+};
 
 // Initialize Database State from LocalStorage or Default Mock Data
 let state = {
@@ -172,31 +179,39 @@ function getDbKey(suffix) {
     return `pgsmart_guest_${suffix}`;
 }
 
-function initDatabase() {
-    // Seed users list if not present
-    if (!localStorage.getItem('pgsmart_users')) {
-        const defaultUserList = [
-            { fullname: "Sarah Connor", username: "admin", password: "admin123", role: "Super Admin" }
-        ];
-        localStorage.setItem('pgsmart_users', JSON.stringify(defaultUserList));
-    }
-    usersList = JSON.parse(localStorage.getItem('pgsmart_users'));
+let firebaseDb = null;
 
-    // Check logged in user session (using sessionStorage to logout when app is closed)
-    const savedSession = sessionStorage.getItem('pgsmart_current_user');
-    if (savedSession) {
-        currentUser = JSON.parse(savedSession);
+function initFirebase() {
+    if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "YOUR_FIREBASE_API_KEY") {
+        try {
+            if (firebase.apps.length === 0) {
+                firebase.initializeApp(FIREBASE_CONFIG);
+            }
+            firebaseDb = firebase.database();
+            console.log("Firebase initialized successfully");
+        } catch (e) {
+            console.error("Firebase init failed:", e);
+            showToast("Firebase connection failed: " + e.message, "error");
+            firebaseDb = null;
+        }
     } else {
-        currentUser = null;
+        firebaseDb = null;
     }
+}
 
-    // Determine database keys
+function getFirebaseBasePath() {
+    if (currentUser) {
+        return `users_data/${currentUser.username.toLowerCase()}`;
+    }
+    return `guest_data`;
+}
+
+function loadLocalCache() {
     const roomsKey = getDbKey('rooms');
     const tenantsKey = getDbKey('tenants');
     const complaintsKey = getDbKey('complaints');
     const settingsKey = getDbKey('settings');
 
-    // Seed individual partition if not present
     if (!localStorage.getItem(roomsKey)) {
         localStorage.setItem(roomsKey, JSON.stringify(currentUser ? [] : DEFAULT_ROOMS));
     }
@@ -214,25 +229,137 @@ function initDatabase() {
     state.tenants = JSON.parse(localStorage.getItem(tenantsKey));
     state.complaints = JSON.parse(localStorage.getItem(complaintsKey));
     state.settings = JSON.parse(localStorage.getItem(settingsKey));
+}
 
-    // Apply saved configurations
+// Wraps Firebase promise with a timeout so app never hangs
+function firebaseWithTimeout(promise, ms = 5000) {
+    const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Firebase timed out")), ms)
+    );
+    return Promise.race([promise, timeout]);
+}
+
+async function initDatabase() {
+    // Seed default users if none exist
+    if (!localStorage.getItem('pgsmart_users')) {
+        const defaultUserList = [
+            { fullname: "Adithya Rachamadugu", username: "Adithya", password: "Adithya123@", role: "Super Admin" },
+            { fullname: "Sarah Connor", username: "admin", password: "admin123", role: "Super Admin" }
+        ];
+        localStorage.setItem('pgsmart_users', JSON.stringify(defaultUserList));
+    }
+    usersList = JSON.parse(localStorage.getItem('pgsmart_users'));
+
+    // Restore session
+    const savedSession = sessionStorage.getItem('pgsmart_current_user');
+    currentUser = savedSession ? JSON.parse(savedSession) : null;
+
+    // Load settings from local cache immediately
+    const settingsKey = getDbKey('settings');
+    if (localStorage.getItem(settingsKey)) {
+        state.settings = JSON.parse(localStorage.getItem(settingsKey));
+    }
+
+    // Apply theme immediately — no waiting for network
     document.documentElement.setAttribute('data-theme', state.settings.theme || 'dark');
     document.documentElement.setAttribute('data-accent', state.settings.accentColor || 'cyan');
     applySettings();
+
+    // Load local cache RIGHT NOW so the app is always usable
+    loadLocalCache();
+
+    // Dismiss preloader now — app is ready
+    const preloader = document.getElementById('preloader');
+    if (preloader) {
+        preloader.classList.add('fade-out');
+        setTimeout(() => { if (preloader.parentNode) preloader.remove(); }, 600);
+    }
+
+    // Firebase sync in background — never blocks the app
+    initFirebase();
+    if (firebaseDb) {
+        try {
+            const basePath = getFirebaseBasePath();
+            showToast("Syncing with Firebase Cloud...", "info");
+
+            const snapshot = await firebaseWithTimeout(firebaseDb.ref(basePath).once('value'));
+            const data = snapshot.val() || {};
+
+            if (!data.rooms) {
+                state.rooms = currentUser ? [] : DEFAULT_ROOMS;
+                firebaseDb.ref(`${basePath}/rooms`).set(state.rooms).catch(console.warn);
+            } else { state.rooms = data.rooms; }
+
+            if (!data.tenants) {
+                state.tenants = currentUser ? [] : DEFAULT_TENANTS;
+                firebaseDb.ref(`${basePath}/tenants`).set(state.tenants).catch(console.warn);
+            } else { state.tenants = data.tenants; }
+
+            if (!data.complaints) {
+                state.complaints = currentUser ? [] : DEFAULT_COMPLAINTS;
+                firebaseDb.ref(`${basePath}/complaints`).set(state.complaints).catch(console.warn);
+            } else { state.complaints = data.complaints; }
+
+            if (!data.settings) {
+                firebaseDb.ref(`${basePath}/settings`).set(state.settings).catch(console.warn);
+            } else { state.settings = { ...state.settings, ...data.settings }; }
+
+            // Sync global users list from Firebase
+            const fbUsersSnap = await firebaseWithTimeout(firebaseDb.ref('users').once('value'));
+            const fbUsers = fbUsersSnap.val();
+            if (!fbUsers) {
+                firebaseDb.ref('users').set(usersList).catch(console.warn);
+            } else {
+                usersList = fbUsers;
+                localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+            }
+
+            // Update local cache with fresh Firebase data
+            localStorage.setItem(getDbKey('rooms'), JSON.stringify(state.rooms));
+            localStorage.setItem(getDbKey('tenants'), JSON.stringify(state.tenants));
+            localStorage.setItem(getDbKey('complaints'), JSON.stringify(state.complaints));
+            localStorage.setItem(getDbKey('settings'), JSON.stringify(state.settings));
+
+            showToast("Cloud sync complete.", "success");
+        } catch (e) {
+            console.warn("Firebase unavailable, using local cache:", e.message);
+            showToast("Running offline — local data loaded.", "info");
+        }
+    }
+
+    // Re-render active view after sync
+    const activeSection = document.querySelector(".content-section.active");
+    if (activeSection) {
+        switchView(activeSection.id.replace("view-", ""));
+    }
 }
 
 function saveData(key) {
+    const basePath = getFirebaseBasePath();
+
     if (key === 'rooms' || key === 'all') {
         localStorage.setItem(getDbKey('rooms'), JSON.stringify(state.rooms));
+        if (firebaseDb) {
+            firebaseDb.ref(`${basePath}/rooms`).set(state.rooms).catch(e => console.error(e));
+        }
     }
     if (key === 'tenants' || key === 'all') {
         localStorage.setItem(getDbKey('tenants'), JSON.stringify(state.tenants));
+        if (firebaseDb) {
+            firebaseDb.ref(`${basePath}/tenants`).set(state.tenants).catch(e => console.error(e));
+        }
     }
     if (key === 'complaints' || key === 'all') {
         localStorage.setItem(getDbKey('complaints'), JSON.stringify(state.complaints));
+        if (firebaseDb) {
+            firebaseDb.ref(`${basePath}/complaints`).set(state.complaints).catch(e => console.error(e));
+        }
     }
     if (key === 'settings' || key === 'all') {
         localStorage.setItem(getDbKey('settings'), JSON.stringify(state.settings));
+        if (firebaseDb) {
+            firebaseDb.ref(`${basePath}/settings`).set(state.settings).catch(e => console.error(e));
+        }
     }
 }
 
@@ -497,13 +624,33 @@ function renderAnalyticsCharts(stats) {
                       currentAccent === 'green' ? '#00ff87' : '#f5af19';
 
     // Revenue Trend Chart (Area Chart)
+    // Build real monthly collection data from tenants — no fake hardcoded values
+    const monthLabels = [];
+    const monthData   = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const label = d.toLocaleString('en-IN', { month: 'short' }) + (i === 0 ? ' (Current)' : '');
+        monthLabels.push(label);
+        // Sum paid amounts from tenants who joined in or before this month
+        const collected = state.tenants.reduce((sum, t) => {
+            if (!t.joinDate) return sum;
+            const join = new Date(t.joinDate);
+            if (join.getFullYear() === d.getFullYear() && join.getMonth() === d.getMonth()) {
+                return sum + (t.paid || 0);
+            }
+            return sum;
+        }, 0);
+        monthData.push(collected);
+    }
+
     revenueChart = new Chart(ctxRevenue, {
         type: 'line',
         data: {
-            labels: ['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May (Current)'],
+            labels: monthLabels,
             datasets: [{
                 label: 'Monthly Collection (₹)',
-                data: [35000, 48000, 52000, 68000, 81000, stats.monthlyRevenue - stats.pendingPayments],
+                data: monthData,
                 borderColor: accentHex,
                 backgroundColor: 'rgba(0, 242, 254, 0.08)',
                 borderWidth: 3,
@@ -532,18 +679,20 @@ function renderAnalyticsCharts(stats) {
         }
     });
 
-    // Room occupancy breakdown (Doughnut)
-    const singleSharing = state.rooms.filter(r => r.type === "Single").reduce((sum, r) => sum + r.occupiedBeds, 0);
-    const doubleSharing = state.rooms.filter(r => r.type === "Double Sharing").reduce((sum, r) => sum + r.occupiedBeds, 0);
-    const tripleSharing = state.rooms.filter(r => r.type === "Triple Sharing").reduce((sum, r) => sum + r.occupiedBeds, 0);
+    // Room occupancy breakdown — Occupied / Free / Vacating
+    const totalBedsCap = state.rooms.reduce((sum, r) => sum + (r.capacity || 0), 0);
+    const occupiedCount = state.tenants.length;
+    const vacatingCount = state.tenants.filter(t => t.vacating).length;
+    const stayingCount  = Math.max(0, occupiedCount - vacatingCount);
+    const freeCount     = Math.max(0, totalBedsCap - occupiedCount);
 
     occupancyChart = new Chart(ctxOccupancy, {
         type: 'doughnut',
         data: {
-            labels: ['Single', 'Double', 'Triple'],
+            labels: ['Occupied', 'Free / Vacant', 'Vacating Soon'],
             datasets: [{
-                data: [singleSharing, doubleSharing, tripleSharing],
-                backgroundColor: [accentHex, '#9d4edd', '#e07a5f'],
+                data: [stayingCount, freeCount, vacatingCount],
+                backgroundColor: [accentHex, '#10b981', '#ef4444'],
                 borderColor: 'rgba(15, 23, 42, 0.8)',
                 borderWidth: 2
             }]
@@ -555,6 +704,13 @@ function renderAnalyticsCharts(stats) {
                 legend: {
                     position: 'bottom',
                     labels: { color: '#8f9cae', font: { family: 'Inter', size: 11 } }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return ` ${ctx.label}: ${ctx.parsed} bed${ctx.parsed !== 1 ? 's' : ''}`;
+                        }
+                    }
                 }
             },
             cutout: '70%'
@@ -632,7 +788,7 @@ function renderTenants() {
             <td>${tenant.phone}</td>
             <td>₹${tenant.rent.toLocaleString('en-IN')}</td>
             <td>₹${(tenant.due || 0).toLocaleString('en-IN')}</td>
-            <td><span class="status-badge ${badgeClass}">${tenant.status}</span></td>
+            <td><span class="status-badge ${badgeClass}">${tenant.status}</span>${tenant.vacating ? ` <span class="status-badge" style="background:#ef444422;color:#ef4444;border:1px solid #ef444444;margin-left:4px;">🚪 Vacating</span>` : ''}</td>
             <td>${formatDateString(tenant.joiningDate)}</td>
             <td>
                 <div class="table-actions">
@@ -1104,6 +1260,19 @@ function openPayModal(tenantId) {
         generatePayQR(this.value, tenant.name, tenant.room);
     };
 
+    // Vacating toggle
+    const vacChk  = document.getElementById('pay-vacating');
+    const vacBox  = document.getElementById('pay-vacating-date-box');
+    const vacDate = document.getElementById('pay-vacating-date');
+    if (vacChk) {
+        vacChk.checked = tenant.vacating || false;
+        if (vacBox) vacBox.style.display = tenant.vacating ? 'block' : 'none';
+        if (vacDate) vacDate.value = tenant.vacatingDate || '';
+        vacChk.onchange = function() {
+            if (vacBox) vacBox.style.display = this.checked ? 'block' : 'none';
+        };
+    }
+
     document.getElementById("pay-modal").classList.add("active");
 }
 
@@ -1191,11 +1360,16 @@ function handlePaySubmit(e) {
         newStatus = "Paid";
     }
 
+    const vacating     = document.getElementById('pay-vacating')      ? document.getElementById('pay-vacating').checked      : false;
+    const vacatingDate = document.getElementById('pay-vacating-date') ? document.getElementById('pay-vacating-date').value   : '';
+
     state.tenants[tenantIdx] = {
         ...tenant,
         due: due,
         status: newStatus,
         notes: notes,
+        vacating: vacating,
+        vacatingDate: vacating ? vacatingDate : '',
         paymentDate: newStatus === "Paid" ? new Date().toISOString().split("T")[0] : tenant.paymentDate
     };
 
@@ -1328,18 +1502,53 @@ function sendWhatsAppBill(tenantId) {
     const tenant = state.tenants.find(t => t.id === tenantId);
     if (!tenant) return;
 
-    const name = tenant.name;
-    const room = tenant.room;
-    const rent = tenant.rent;
-    const due = tenant.due;
-    const phone = tenant.phone;
-
+    const name   = tenant.name;
+    const room   = tenant.room;
+    const rent   = tenant.rent;
+    const due    = tenant.due || 0;
+    const phone  = tenant.phone;
     const pgName = state.settings.pgName || "PGSmart Rental";
+
+    // Month / date info for the bill
+    const now       = new Date();
+    const monthName = now.toLocaleString('en-IN', { month: 'long' });
+    const year      = now.getFullYear();
+    const dateStr   = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+    const paidAmt   = Math.max(0, rent - due);
+
+    // 1. Generate a downloadable PDF bill for this tenant
+    generateTenantBillPDF(tenant, { pgName, monthName, year, dateStr, paidAmt, due });
+
+    // 2. Build a rich WhatsApp message matching the PDF bill
     let message = "";
     if (due > 0) {
-        message = `Hello ${name}, your monthly rent for Room ${room} at *${pgName}* is ₹${rent.toLocaleString('en-IN')}. You have outstanding pending dues of *₹${due.toLocaleString('en-IN')}*. Please clear it before the due date. Thank you.`;
+        message =
+`🏠 *${pgName}*
+📋 *Rent Bill — ${monthName} ${year}*
+━━━━━━━━━━━━━━━━━━━━
+👤 Tenant: *${name}*
+🚪 Room: *${room}*
+📅 Bill Date: ${dateStr}
+━━━━━━━━━━━━━━━━━━━━
+💰 Monthly Rent: ₹${rent.toLocaleString('en-IN')}
+✅ Amount Paid: ₹${paidAmt.toLocaleString('en-IN')}
+⚠️ Outstanding Due: *₹${due.toLocaleString('en-IN')}*
+━━━━━━━━━━━━━━━━━━━━
+Please clear your dues at the earliest. A detailed bill PDF has been downloaded — please attach it here. Thank you! 🙏`;
     } else {
-        message = `Hello ${name}, your monthly rent invoice for Room ${room} at *${pgName}* is ₹${rent.toLocaleString('en-IN')}. Status: *PAID*. Thank you for paying on time!`;
+        message =
+`🏠 *${pgName}*
+📋 *Rent Receipt — ${monthName} ${year}*
+━━━━━━━━━━━━━━━━━━━━
+👤 Tenant: *${name}*
+🚪 Room: *${room}*
+📅 Date: ${dateStr}
+━━━━━━━━━━━━━━━━━━━━
+💰 Monthly Rent: ₹${rent.toLocaleString('en-IN')}
+✅ Status: *FULLY PAID*
+⚠️ Pending Dues: ₹0
+━━━━━━━━━━━━━━━━━━━━
+Thank you for paying on time! A receipt PDF has been downloaded — please attach it here. 🙏`;
     }
 
     // Format phone: if no international prefix, append default 91
@@ -1349,84 +1558,183 @@ function sendWhatsAppBill(tenantId) {
     }
 
     const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-    window.open(waUrl, '_blank');
+    // Slight delay so the PDF download triggers before the WhatsApp tab opens
+    setTimeout(() => window.open(waUrl, '_blank'), 600);
+
     addActivity(`WhatsApp bill sent to ${name} (${phone})`, 'message-square');
-    showToast(`Drafted WhatsApp notification for ${name}`, "info");
+    showToast(`Bill PDF downloaded & WhatsApp message drafted for ${name}`, "info");
+}
+
+// ----------------------------------------------------
+// GENERATE A SINGLE-TENANT BILL PDF (for WhatsApp attachment)
+// ----------------------------------------------------
+function generateTenantBillPDF(tenant, ctx) {
+    if (!window.html2pdf) {
+        showToast("PDF engine still loading — try again in a moment.", "warning");
+        return;
+    }
+
+    const { pgName, monthName, year, dateStr, paidAmt, due } = ctx;
+    const statusColor = due > 0 ? '#ef4444' : '#10b981';
+    const statusLabel = due > 0 ? 'PENDING DUE' : 'FULLY PAID';
+
+    const billArea = document.createElement("div");
+    billArea.style.padding = "0";
+    billArea.style.color = "#1e293b";
+    billArea.style.background = "#ffffff";
+    billArea.style.fontFamily = "Inter, sans-serif";
+    billArea.style.width = "560px";
+
+    billArea.innerHTML = `
+        <div style="background:#0f172a;padding:24px 36px;text-align:center;">
+            <h1 style="margin:0;font-size:26px;color:#ffffff;letter-spacing:0.5px;">${pgName}</h1>
+            <p style="margin:6px 0 0 0;color:#94a3b8;font-size:13px;">Rent Bill — ${monthName} ${year}</p>
+        </div>
+        <div style="padding:30px 36px;">
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+            <tr><td style="padding:6px 0;color:#64748b;width:40%;">Tenant Name</td><td style="padding:6px 0;font-weight:700;">${tenant.name}</td></tr>
+            <tr><td style="padding:6px 0;color:#64748b;">Room No</td><td style="padding:6px 0;font-weight:700;">${tenant.room}</td></tr>
+            <tr><td style="padding:6px 0;color:#64748b;">Phone</td><td style="padding:6px 0;">${tenant.phone}</td></tr>
+            <tr><td style="padding:6px 0;color:#64748b;">Bill Date</td><td style="padding:6px 0;">${dateStr}</td></tr>
+        </table>
+
+        <table style="width:100%;border-collapse:collapse;border-top:2px solid #e2e8f0;border-bottom:2px solid #e2e8f0;">
+            <tr><td style="padding:10px 0;color:#475569;">Monthly Rent</td><td style="padding:10px 0;text-align:right;font-weight:700;">₹${tenant.rent.toLocaleString('en-IN')}</td></tr>
+            <tr><td style="padding:10px 0;color:#475569;">Amount Paid</td><td style="padding:10px 0;text-align:right;font-weight:700;color:#10b981;">₹${paidAmt.toLocaleString('en-IN')}</td></tr>
+            <tr><td style="padding:10px 0;color:#475569;">Outstanding Due</td><td style="padding:10px 0;text-align:right;font-weight:700;color:${due > 0 ? '#ef4444' : '#0f172a'};">₹${due.toLocaleString('en-IN')}</td></tr>
+        </table>
+
+        <div style="margin-top:24px;text-align:center;">
+            <span style="display:inline-block;padding:8px 24px;border-radius:20px;background:${statusColor}15;color:${statusColor};font-weight:700;font-size:13px;letter-spacing:0.5px;">${statusLabel}</span>
+        </div>
+
+        <p style="margin-top:30px;text-align:center;color:#94a3b8;font-size:11px;">Generated by ${pgName} • ${dateStr}</p>
+        </div>
+    `;
+
+    const opt = {
+        margin: 0,
+        filename: `${pgName.replace(/[^a-zA-Z0-9]/g,'_')}_${tenant.name.replace(/[^a-zA-Z0-9]/g,'_')}_${monthName}_${year}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    html2pdf().from(billArea).set(opt).save();
 }
 
 // ----------------------------------------------------
 // EXPORT TENANTS TO PDF
 // ----------------------------------------------------
-function exportTenantsToPDF() {
-    if (!window.html2pdf) {
-        showToast("PDF generation engine loading. Try printing directly.", "warning");
-        window.print();
+function exportTenantsToExcel() {
+    if (!window.XLSX) {
+        showToast("Excel engine still loading — try again in a moment.", "warning");
         return;
     }
 
-    // Create a temporary clone div of the tenants list styled nicely for PDF
-    const printArea = document.createElement("div");
-    printArea.style.padding = "30px";
-    printArea.style.color = "#1e293b";
-    printArea.style.background = "#ffffff";
-    printArea.style.fontFamily = "Inter, sans-serif";
+    const pgName  = state.settings.pgName || 'PGSmart Rental Application';
+    const dateStr = new Date().toLocaleDateString('en-IN');
+    const now     = new Date();
+    const month   = now.toLocaleString('en-IN', { month: 'long' });
+    const year    = now.getFullYear();
 
-    let rowsHTML = "";
-    state.tenants.forEach(t => {
-        rowsHTML += `
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="padding:10px; font-weight:600;">${t.name}</td>
-                <td style="padding:10px;">Room ${t.room}</td>
-                <td style="padding:10px;">${t.phone}</td>
-                <td style="padding:10px;">₹${t.rent.toLocaleString('en-IN')}</td>
-                <td style="padding:10px;">₹${(t.due || 0).toLocaleString('en-IN')}</td>
-                <td style="padding:10px; font-weight:600; color:${t.status === 'Paid' ? '#10b981' : '#f59e0b'}">${t.status}</td>
-                <td style="padding:10px;">${t.joiningDate}</td>
-            </tr>
-        `;
+    // ── Sheet 1: Tenant Details ──
+    const tenantRows = [
+        [`${pgName} — Tenant Report (${month} ${year})`],
+        [`Generated on: ${dateStr}`],
+        [],
+        ['#', 'Tenant Name', 'Room No', 'Phone', 'Rent (₹)', 'Paid (₹)', 'Due (₹)', 'Status', 'Vacating?', 'Vacate Date', 'Notes']
+    ];
+    state.tenants.forEach((t, i) => {
+        const rent = t.rent || 0;
+        const due  = t.due  || 0;
+        const paid = Math.max(0, rent - due);
+        tenantRows.push([
+            i + 1,
+            t.name,
+            t.room,
+            t.phone,
+            rent,
+            paid,
+            due,
+            t.status,
+            t.vacating ? 'Yes' : 'No',
+            t.vacatingDate || '—',
+            t.notes || ''
+        ]);
     });
 
-    printArea.innerHTML = `
-        <div style="display:flex; justify-content:space-between; margin-bottom:30px; border-bottom:3px solid #0f172a; padding-bottom:15px;">
-            <div>
-                <h1 style="margin:0; font-size:26px; color:#0f172a;">${state.settings.pgName || 'PGSmart Rental Application'}</h1>
-                <p style="margin:5px 0 0 0; color:#64748b;">PG Rental Management - Tenant Directory</p>
-            </div>
-            <div style="text-align:right;">
-                <p style="margin:0; font-weight:600;">Date Generated</p>
-                <p style="margin:5px 0 0 0; color:#64748b;">${new Date().toLocaleDateString()}</p>
-            </div>
-        </div>
-
-        <table style="width:100%; border-collapse:collapse; text-align:left;">
-            <thead>
-                <tr style="background:#f8fafc; border-bottom:2px solid #cbd5e1;">
-                    <th style="padding:12px 10px;">Tenant Name</th>
-                    <th style="padding:12px 10px;">Room</th>
-                    <th style="padding:12px 10px;">Phone</th>
-                    <th style="padding:12px 10px;">Rent</th>
-                    <th style="padding:12px 10px;">Dues</th>
-                    <th style="padding:12px 10px;">Status</th>
-                    <th style="padding:12px 10px;">Joining Date</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${rowsHTML}
-            </tbody>
-        </table>
-    `;
-
-    const opt = {
-        margin:       10,
-        filename:     `${(state.settings.pgName || 'PGSmart').replace(/[^a-zA-Z0-9]/g, '_')}_Tenants_Database.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2 },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
-    };
-
-    html2pdf().from(printArea).set(opt).save().then(() => {
-        showToast("PDF Export Complete.", "success");
+    // ── Sheet 2: Room Summary ──
+    const roomRows = [
+        [`${pgName} — Room Summary`],
+        [],
+        ['Room No', 'Type', 'Floor', 'AC', 'Capacity', 'Occupied', 'Vacant', 'Monthly Rent (₹)', 'Status']
+    ];
+    state.rooms.forEach(r => {
+        const occupants = state.tenants.filter(t => t.room === r.roomNumber).length;
+        const vacant = (r.capacity || 0) - occupants;
+        roomRows.push([
+            r.roomNumber,
+            r.type,
+            r.floor !== undefined ? `Floor ${r.floor}` : '—',
+            r.ac ? 'Yes' : 'No',
+            r.capacity || 0,
+            occupants,
+            Math.max(0, vacant),
+            r.rent || 0,
+            vacant > 0 ? 'Vacant' : 'Full'
+        ]);
     });
+
+    // ── Sheet 3: Financial Summary ──
+    const totalRent      = state.tenants.reduce((s, t) => s + (t.rent || 0), 0);
+    const totalDue       = state.tenants.reduce((s, t) => s + (t.due  || 0), 0);
+    const totalCollected = totalRent - totalDue;
+    const paidCount      = state.tenants.filter(t => t.status === 'Paid').length;
+    const pendingCount   = state.tenants.filter(t => t.status !== 'Paid').length;
+    const vacatingCount  = state.tenants.filter(t => t.vacating).length;
+    const totalCapacity  = state.rooms.reduce((s, r) => s + (r.capacity || 0), 0);
+
+    const finRows = [
+        [`${pgName} — Financial Summary (${month} ${year})`],
+        [],
+        ['Metric', 'Value'],
+        ['Total Tenants',            state.tenants.length],
+        ['Paid Tenants',             paidCount],
+        ['Pending / Overdue',        pendingCount],
+        ['Vacating Soon',            vacatingCount],
+        ['Total Rent Expected (₹)',  totalRent],
+        ['Total Collected (₹)',      totalCollected],
+        ['Total Dues Pending (₹)',   totalDue],
+        ['Total Rooms',              state.rooms.length],
+        ['Total Bed Capacity',       totalCapacity],
+        ['Occupied Beds',            state.tenants.length],
+        ['Vacant Beds',              Math.max(0, totalCapacity - state.tenants.length)]
+    ];
+
+    // Build workbook
+    const wb = XLSX.utils.book_new();
+
+    const ws1 = XLSX.utils.aoa_to_sheet(tenantRows);
+    ws1['!cols'] = [
+        { wch: 4 }, { wch: 22 }, { wch: 10 }, { wch: 14 },
+        { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 24 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Tenants');
+
+    const ws2 = XLSX.utils.aoa_to_sheet(roomRows);
+    ws2['!cols'] = [{ wch: 10 }, { wch: 16 }, { wch: 8 }, { wch: 6 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 16 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Rooms');
+
+    const ws3 = XLSX.utils.aoa_to_sheet(finRows);
+    ws3['!cols'] = [{ wch: 28 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws3, 'Financial Summary');
+
+    const filename = `${pgName.replace(/[^a-zA-Z0-9]/g, '_')}_Report_${month}_${year}.xlsx`;
+    XLSX.writeFile(wb, filename);
+
+    addActivity('Exported tenant report to Excel', 'file-spreadsheet');
+    showToast('Excel report downloaded!', 'success');
 }
 
 // ----------------------------------------------------
@@ -1517,6 +1825,120 @@ function deleteComplaint(id) {
         showToast("Complaint record deleted.", "info");
         renderComplaints();
     }
+}
+
+// ----------------------------------------------------
+// UI RENDERING - SYSTEM USERS / ADMINISTRATORS
+// ----------------------------------------------------
+function renderUsers() {
+    const listContainer = document.getElementById("user-table-rows");
+    if (!listContainer) return;
+    listContainer.innerHTML = "";
+
+    if (usersList.length === 0) {
+        listContainer.innerHTML = `<tr><td colspan="5" class="table-empty-row">No system users found.</td></tr>`;
+        return;
+    }
+
+    usersList.forEach((user, index) => {
+        const tr = document.createElement("tr");
+        tr.className = "table-row-item";
+        const initials = user.fullname.split(" ").map(w => w[0]).join("").toUpperCase();
+        const isSelf = currentUser && user.username.toLowerCase() === currentUser.username.toLowerCase();
+
+        tr.innerHTML = `
+            <td>
+                <div class="user-cell">
+                    <span class="user-avatar">${initials}</span>
+                    <div class="user-meta">
+                        <span class="user-name">${user.fullname}${isSelf ? ' <span style="font-size:0.7rem;color:var(--accent);">(You)</span>' : ''}</span>
+                    </div>
+                </div>
+            </td>
+            <td>${user.username}</td>
+            <td><span class="status-badge ${user.role === 'Super Admin' ? 'badge-paid' : 'badge-pending'}">${user.role}</span></td>
+            <td><span style="color: #10b981; font-weight: 600; display: flex; align-items: center; gap: 4px;"><i data-lucide="activity" style="width:14px; height:14px;"></i> Active</span></td>
+            <td>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button onclick="openUserModal(${index})" style="background:none;border:none;cursor:pointer;color:var(--accent);" title="Edit">
+                        <i data-lucide="pencil" style="width:15px;height:15px;"></i>
+                    </button>
+                    ${!isSelf ? `<button onclick="deleteUser(${index})" style="background:none;border:none;cursor:pointer;color:#ef4444;" title="Delete">
+                        <i data-lucide="trash-2" style="width:15px;height:15px;"></i>
+                    </button>` : '<span style="font-size:0.7rem;color:var(--text-secondary);">—</span>'}
+                </div>
+            </td>
+        `;
+        listContainer.appendChild(tr);
+    });
+
+    if (window.lucide) lucide.createIcons();
+}
+
+function openUserModal(index = null) {
+    document.getElementById('user-modal-index').value = index !== null ? index : '';
+    document.getElementById('user-modal-fullname').value = index !== null ? usersList[index].fullname : '';
+    document.getElementById('user-modal-username').value = index !== null ? usersList[index].username : '';
+    document.getElementById('user-modal-password').value = index !== null ? usersList[index].password : '';
+    document.getElementById('user-modal-role').value     = index !== null ? usersList[index].role     : 'Admin';
+    document.getElementById('user-modal-title').textContent = index !== null ? 'Edit User' : 'Add New User';
+    document.getElementById('user-modal').classList.add('active');
+}
+
+function closeUserModal() {
+    document.getElementById('user-modal').classList.remove('active');
+}
+
+async function saveUser() {
+    const index    = document.getElementById('user-modal-index').value;
+    const fullname = document.getElementById('user-modal-fullname').value.trim();
+    const username = document.getElementById('user-modal-username').value.trim();
+    const password = document.getElementById('user-modal-password').value.trim();
+    const role     = document.getElementById('user-modal-role').value;
+
+    if (!fullname || !username || !password) {
+        showToast("Please fill in all fields.", "error");
+        return;
+    }
+
+    // Check duplicate username (skip self when editing)
+    const duplicate = usersList.find((u, i) => u.username.toLowerCase() === username.toLowerCase() && i !== Number(index));
+    if (duplicate) {
+        showToast("Username already exists. Choose a different one.", "error");
+        return;
+    }
+
+    const userObj = { fullname, username, password, role };
+
+    if (index !== '') {
+        usersList[Number(index)] = userObj;
+        showToast("User updated successfully.", "success");
+    } else {
+        usersList.push(userObj);
+        showToast("User added successfully.", "success");
+    }
+
+    // Save to localStorage + Firebase
+    localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+    if (firebaseDb) {
+        await firebaseDb.ref('users').set(usersList);
+    }
+
+    closeUserModal();
+    renderUsers();
+}
+
+async function deleteUser(index) {
+    const user = usersList[index];
+    if (!confirm(`Delete user "${user.fullname}" (${user.username})? This cannot be undone.`)) return;
+
+    usersList.splice(index, 1);
+    localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+    if (firebaseDb) {
+        await firebaseDb.ref('users').set(usersList);
+    }
+    showToast("User deleted.", "info");
+    renderUsers();
 }
 
 // ----------------------------------------------------
@@ -1630,6 +2052,14 @@ function changeAccentColor(colorName) {
 // ----------------------------------------------------
 // ROUTING & VIEW CONTROLLER
 // ----------------------------------------------------
+// Closes the mobile sidebar drawer and hides the backdrop (used by overlay tap)
+function closeMobileSidebar() {
+    const sidebar = document.getElementById("app-sidebar");
+    const backdrop = document.getElementById("sidebar-backdrop");
+    if (sidebar) sidebar.classList.remove("mobile-active");
+    if (backdrop) backdrop.classList.remove("active");
+}
+
 function switchView(viewId) {
     const sections = document.querySelectorAll(".content-section");
     sections.forEach(sec => {
@@ -1654,6 +2084,8 @@ function switchView(viewId) {
     const sidebar = document.getElementById("app-sidebar");
     if (sidebar.classList.contains("mobile-active")) {
         sidebar.classList.remove("mobile-active");
+        const backdrop = document.getElementById("sidebar-backdrop");
+        if (backdrop) backdrop.classList.remove("active");
     }
 
     // Refresh layout data
@@ -1661,6 +2093,7 @@ function switchView(viewId) {
     else if (viewId === 'tenants') renderTenants();
     else if (viewId === 'rooms') renderRooms();
     else if (viewId === 'complaints') renderComplaints();
+    else if (viewId === 'users') renderUsers();
 
     // Update main header page title
     const headerTitle = document.getElementById("main-header-title");
@@ -1845,23 +2278,33 @@ function closeAuthModal() {
 }
 
 function checkAuth() {
-    const btnTrigger = document.getElementById("btn-auth-trigger");
-    const nameEl = document.getElementById("sidebar-admin-name");
-    const roleEl = document.getElementById("sidebar-admin-role");
-    const btnLogout = document.getElementById("btn-logout");
+    const btnTrigger  = document.getElementById("btn-auth-trigger");
+    const nameEl      = document.getElementById("sidebar-admin-name");
+    const roleEl      = document.getElementById("sidebar-admin-role");
+    const btnLogout   = document.getElementById("btn-logout");
+    const navUsers    = document.getElementById("nav-users");
+    const acctControl = document.getElementById("header-account-control");
     
     if (currentUser) {
         // Logged in user
         if (btnTrigger) btnTrigger.style.display = "none";
+        if (acctControl) acctControl.style.display = "flex";
         if (nameEl) nameEl.innerText = currentUser.fullname;
         if (roleEl) roleEl.innerText = currentUser.role || "Property Manager";
         if (btnLogout) btnLogout.style.display = "flex";
+        
+        // Show users tab only to Super Admins
+        if (navUsers) {
+            navUsers.style.display = currentUser.role === "Super Admin" ? "flex" : "none";
+        }
     } else {
         // Guest user
         if (btnTrigger) btnTrigger.style.display = "flex";
+        if (acctControl) acctControl.style.display = "none";
         if (nameEl) nameEl.innerText = "Guest User";
         if (roleEl) roleEl.innerText = "Guest Viewer";
         if (btnLogout) btnLogout.style.display = "none";
+        if (navUsers) navUsers.style.display = "none";
     }
 }
 
@@ -1882,12 +2325,28 @@ function toggleAuthView(view) {
     }
 }
 
-function handleLogin(e) {
+async function handleLogin(e) {
     e.preventDefault();
     const userVal = document.getElementById("login-username").value.trim();
     const passVal = document.getElementById("login-password").value;
     const rememberCheckbox = document.getElementById("login-remember");
     const remember = rememberCheckbox ? rememberCheckbox.checked : false;
+
+    // Always fetch latest users from Firebase first (source of truth)
+    // This ensures deleted/modified users are checked in real-time
+    // even if old data is cached in localStorage
+    if (firebaseDb) {
+        try {
+            const snap = await firebaseWithTimeout(firebaseDb.ref('users').once('value'));
+            const fbUsers = snap.val();
+            if (fbUsers) {
+                usersList = fbUsers;
+                localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+            }
+        } catch (err) {
+            console.warn('Firebase user check failed, using local cache:', err.message);
+        }
+    }
 
     const matchedUser = usersList.find(u => u.username.toLowerCase() === userVal.toLowerCase() && u.password === passVal);
     
@@ -1907,11 +2366,19 @@ function handleLogin(e) {
         }
 
         showToast(`Welcome back, ${currentUser.fullname}!`, "success");
+        // Record last login time
+        const idx = usersList.findIndex(u => u.username.toLowerCase() === matchedUser.username.toLowerCase());
+        if (idx !== -1) {
+            usersList[idx].lastLogin = new Date().toISOString();
+            localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+            if (firebaseDb) firebaseDb.ref('users').set(usersList).catch(console.warn);
+        }
         
         // Re-initialize database to load user's partitioned data
-        initDatabase();
+        await initDatabase();
         checkMonthlyRentCycle();
         checkAuth();
+        logAudit('LOGIN', `Logged in as ${currentUser.username} (${currentUser.role})`);
         closeAuthModal();
 
         // If not remembering, reset the login form inputs
@@ -1946,6 +2413,10 @@ function handleSignup(e) {
 
     usersList.push(newUser);
     localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+
+    if (firebaseDb) {
+        firebaseDb.ref('users').set(usersList).catch(e => console.error("Firebase sync user error:", e));
+    }
     
     // Seed new user partition with empty data (for a fresh screen)
     const userRoomsKey = `pgsmart_user_${username.toLowerCase()}_rooms`;
@@ -1963,13 +2434,13 @@ function handleSignup(e) {
     toggleAuthView('login');
 }
 
-function handleLogout() {
+async function handleLogout() {
     currentUser = null;
     sessionStorage.removeItem('pgsmart_current_user');
     showToast("Logged out to Guest Mode.", "info");
     
     // Re-initialize database back to guest partition
-    initDatabase();
+    await initDatabase();
     checkMonthlyRentCycle();
     checkAuth();
     switchView('dashboard');
@@ -1978,9 +2449,481 @@ function handleLogout() {
 // ----------------------------------------------------
 // BIND EVENTS & INITIALIZE APPLICATION
 // ----------------------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
+
+// ============================================================
+// SUPER ADMIN — AUDIT LOG
+// ============================================================
+function logAudit(action, details) {
+    if (!currentUser) return;
+    const log = JSON.parse(localStorage.getItem('pgsmart_audit') || '[]');
+    log.unshift({
+        time: new Date().toISOString(),
+        user: currentUser.username,
+        action,
+        details
+    });
+    // Keep last 500 entries
+    if (log.length > 500) log.splice(500);
+    localStorage.setItem('pgsmart_audit', JSON.stringify(log));
+    if (firebaseDb) {
+        firebaseDb.ref('audit_log').set(log).catch(console.warn);
+    }
+}
+
+function renderAuditLog() {
+    const tbody = document.getElementById('audit-table-rows');
+    if (!tbody) return;
+    const filterUser   = (document.getElementById('audit-filter-user')   || {}).value || '';
+    const filterAction = (document.getElementById('audit-filter-action') || {}).value || '';
+    const log = JSON.parse(localStorage.getItem('pgsmart_audit') || '[]');
+
+    // Populate user filter
+    const userFilter = document.getElementById('audit-filter-user');
+    if (userFilter && userFilter.options.length <= 1) {
+        const users = [...new Set(log.map(e => e.user))];
+        users.forEach(u => {
+            const o = document.createElement('option'); o.value = u; o.textContent = u;
+            userFilter.appendChild(o);
+        });
+    }
+
+    const filtered = log.filter(e =>
+        (!filterUser   || e.user   === filterUser) &&
+        (!filterAction || e.action === filterAction)
+    );
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-row">No audit entries found.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(e => {
+        const t = new Date(e.time);
+        const timeStr = t.toLocaleDateString('en-IN') + ' ' + t.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'});
+        const colors = { ADD:'#10b981', EDIT:'#f59e0b', DELETE:'#ef4444', LOGIN:'#3b82f6', LOGOUT:'#8b5cf6' };
+        const color = colors[e.action] || 'var(--text-secondary)';
+        return `<tr class="table-row-item">
+            <td style="font-size:0.8rem;color:var(--text-secondary);">${timeStr}</td>
+            <td><strong>${e.user}</strong></td>
+            <td><span class="status-badge" style="background:${color}22;color:${color};border:1px solid ${color}44;">${e.action}</span></td>
+            <td style="font-size:0.85rem;">${e.details}</td>
+        </tr>`;
+    }).join('');
+}
+
+function exportAuditCSV() {
+    const log = JSON.parse(localStorage.getItem('pgsmart_audit') || '[]');
+    const csv = ['Time,User,Action,Details', ...log.map(e => `"${e.time}","${e.user}","${e.action}","${e.details}"`)].join('\n');
+    downloadCSV(csv, 'audit_log.csv');
+    logAudit('EXPORT', 'Exported audit log as CSV');
+}
+
+function clearAuditLog() {
+    if (!confirm('Clear entire audit log? This cannot be undone.')) return;
+    localStorage.removeItem('pgsmart_audit');
+    if (firebaseDb) firebaseDb.ref('audit_log').remove().catch(console.warn);
+    renderAuditLog();
+    showToast('Audit log cleared.', 'info');
+}
+
+// ============================================================
+// SUPER ADMIN — USER MANAGEMENT (FULL CRUD)
+// ============================================================
+function renderUsers() {
+    const listContainer = document.getElementById("user-table-rows");
+    if (!listContainer) return;
+    listContainer.innerHTML = "";
+    if (usersList.length === 0) {
+        listContainer.innerHTML = '<tr><td colspan="6" class="table-empty-row">No system users found.</td></tr>';
+        return;
+    }
+    usersList.forEach((user, index) => {
+        const tr = document.createElement("tr");
+        tr.className = "table-row-item";
+        const initials = user.fullname.split(" ").map(w => w[0]).join("").toUpperCase();
+        const isSelf = currentUser && user.username.toLowerCase() === currentUser.username.toLowerCase();
+        const lastLogin = user.lastLogin ? new Date(user.lastLogin).toLocaleString('en-IN', {dateStyle:'short', timeStyle:'short'}) : '—';
+        tr.innerHTML = `
+            <td><div class="user-cell">
+                <span class="user-avatar">${initials}</span>
+                <div class="user-meta"><span class="user-name">${user.fullname}${isSelf ? ' <span style="font-size:0.7rem;color:var(--accent);">(You)</span>' : ''}</span></div>
+            </div></td>
+            <td>${user.username}</td>
+            <td><span class="status-badge ${user.role === 'Super Admin' ? 'badge-paid' : 'badge-pending'}">${user.role}</span></td>
+            <td><span style="color:#10b981;font-weight:600;display:flex;align-items:center;gap:4px;"><i data-lucide="activity" style="width:14px;height:14px;"></i> Active</span></td>
+            <td style="font-size:0.8rem;color:var(--text-secondary);">${lastLogin}</td>
+            <td><div style="display:flex;gap:8px;align-items:center;">
+                <button onclick="viewOwnerDetails('${user.username}', '${user.fullname}')" style="background:none;border:none;cursor:pointer;color:#10b981;" title="View Details"><i data-lucide="eye" style="width:15px;height:15px;"></i></button>
+                <button onclick="openUserModal(${index})" style="background:none;border:none;cursor:pointer;color:var(--accent);" title="Edit"><i data-lucide="pencil" style="width:15px;height:15px;"></i></button>
+                <button onclick="resetUserPassword(${index})" style="background:none;border:none;cursor:pointer;color:#f59e0b;" title="Reset Password"><i data-lucide="key" style="width:15px;height:15px;"></i></button>
+                ${!isSelf ? `<button onclick="deleteUser(${index})" style="background:none;border:none;cursor:pointer;color:#ef4444;" title="Delete"><i data-lucide="trash-2" style="width:15px;height:15px;"></i></button>` : '<span style="font-size:0.7rem;color:var(--text-secondary);">—</span>'}
+            </div></td>`;
+        listContainer.appendChild(tr);
+    });
+    if (window.lucide) lucide.createIcons();
+}
+
+// ── View Owner Details: fetch their Firebase data and show in modal ──
+async function viewOwnerDetails(username, fullname) {
+    document.getElementById('owner-modal-name').textContent = fullname + ' — ' + username;
+    document.getElementById('owner-modal').classList.add('active');
+
+    // Reset to loading state
+    document.getElementById('om-tenants').textContent   = '…';
+    document.getElementById('om-rooms').textContent     = '…';
+    document.getElementById('om-collected').textContent = '…';
+    document.getElementById('om-dues').textContent      = '…';
+    document.getElementById('om-tenant-rows').innerHTML = '<tr><td colspan="7" class="table-empty-row">Loading...</td></tr>';
+    document.getElementById('om-room-rows').innerHTML   = '<tr><td colspan="6" class="table-empty-row">Loading...</td></tr>';
+
+    if (!firebaseDb) {
+        showToast('Firebase not connected.', 'error');
+        return;
+    }
+
+    try {
+        const basePath = `users_data/${username.toLowerCase()}`;
+        const snap = await firebaseDb.ref(basePath).once('value');
+        const data = snap.val() || {};
+
+        const tenants    = Object.values(data.tenants    || {});
+        const rooms      = Object.values(data.rooms      || {});
+        const totalPaid  = tenants.reduce((s, t) => s + (t.paid  || 0), 0);
+        const totalDues  = tenants.reduce((s, t) => s + (t.due   || 0), 0);
+
+        // Update summary cards
+        document.getElementById('om-tenants').textContent   = tenants.length;
+        document.getElementById('om-rooms').textContent     = rooms.length;
+        document.getElementById('om-collected').textContent = '₹' + totalPaid.toLocaleString('en-IN');
+        document.getElementById('om-dues').textContent      = '₹' + totalDues.toLocaleString('en-IN');
+
+        // Render tenants table
+        const tbody = document.getElementById('om-tenant-rows');
+        if (tenants.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="table-empty-row">No tenants found for this user.</td></tr>';
+        } else {
+            tbody.innerHTML = tenants.map(t => {
+                const due  = t.due  || 0;
+                const paid = t.paid || 0;
+                const rent = t.rent || 0;
+                const badge = due <= 0
+                    ? '<span class="status-badge badge-paid">Paid</span>'
+                    : '<span class="status-badge badge-unpaid">Due</span>';
+                return `<tr class="table-row-item">
+                    <td><strong>${t.name || '—'}</strong></td>
+                    <td>${t.room || '—'}</td>
+                    <td>${t.phone || '—'}</td>
+                    <td>₹${rent.toLocaleString('en-IN')}</td>
+                    <td style="color:#10b981;">₹${paid.toLocaleString('en-IN')}</td>
+                    <td style="color:${due > 0 ? '#ef4444' : 'inherit'};">₹${due.toLocaleString('en-IN')}</td>
+                    <td>${badge}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // Render rooms table
+        const rbody = document.getElementById('om-room-rows');
+        if (rooms.length === 0) {
+            rbody.innerHTML = '<tr><td colspan="6" class="table-empty-row">No rooms found for this user.</td></tr>';
+        } else {
+            rbody.innerHTML = rooms.map(r => {
+                const total    = r.totalBeds    || 0;
+                const occupied = r.occupiedBeds || 0;
+                const vacant   = total - occupied;
+                const badge = vacant > 0
+                    ? '<span class="status-badge badge-pending">Has Vacancy</span>'
+                    : '<span class="status-badge badge-paid">Full</span>';
+                return `<tr class="table-row-item">
+                    <td><strong>${r.number || '—'}</strong></td>
+                    <td>${r.type || '—'}</td>
+                    <td>${total}</td>
+                    <td style="color:#ef4444;">${occupied}</td>
+                    <td style="color:#10b981;">${vacant}</td>
+                    <td>${badge}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        if (window.lucide) lucide.createIcons();
+
+    } catch (e) {
+        console.error('viewOwnerDetails error:', e);
+        showToast('Failed to load owner data: ' + e.message, 'error');
+    }
+}
+
+function closeOwnerModal() {
+    document.getElementById('owner-modal').classList.remove('active');
+}
+
+function openUserModal(index = null) {
+    document.getElementById('user-modal-index').value = index !== null ? index : '';
+    document.getElementById('user-modal-fullname').value = index !== null ? usersList[index].fullname : '';
+    document.getElementById('user-modal-username').value = index !== null ? usersList[index].username : '';
+    document.getElementById('user-modal-password').value = index !== null ? usersList[index].password : '';
+    document.getElementById('user-modal-role').value     = index !== null ? usersList[index].role     : 'Admin';
+    document.getElementById('user-modal-title').textContent = index !== null ? 'Edit User' : 'Add New User';
+    document.getElementById('user-modal').classList.add('active');
+}
+
+function closeUserModal() {
+    document.getElementById('user-modal').classList.remove('active');
+}
+
+async function saveUser() {
+    const index    = document.getElementById('user-modal-index').value;
+    const fullname = document.getElementById('user-modal-fullname').value.trim();
+    const username = document.getElementById('user-modal-username').value.trim();
+    const password = document.getElementById('user-modal-password').value.trim();
+    const role     = document.getElementById('user-modal-role').value;
+    if (!fullname || !username || !password) { showToast('Please fill in all fields.', 'error'); return; }
+    const duplicate = usersList.find((u, i) => u.username.toLowerCase() === username.toLowerCase() && i !== Number(index));
+    if (duplicate) { showToast('Username already exists.', 'error'); return; }
+    const userObj = { fullname, username, password, role };
+    if (index !== '') {
+        usersList[Number(index)] = { ...usersList[Number(index)], ...userObj };
+        logAudit('EDIT', `Edited user: ${username} (${role})`);
+        showToast('User updated.', 'success');
+    } else {
+        usersList.push(userObj);
+        logAudit('ADD', `Added user: ${username} (${role})`);
+        showToast('User added.', 'success');
+    }
+    localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+    if (firebaseDb) await firebaseDb.ref('users').set(usersList);
+    closeUserModal();
+    renderUsers();
+}
+
+async function deleteUser(index) {
+    const user = usersList[index];
+    if (!confirm(`Delete user "${user.fullname}"? This cannot be undone.`)) return;
+    logAudit('DELETE', `Deleted user: ${user.username}`);
+    usersList.splice(index, 1);
+    localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+    if (firebaseDb) await firebaseDb.ref('users').set(usersList);
+    showToast('User deleted.', 'info');
+    renderUsers();
+}
+
+function resetUserPassword(index) {
+    const user = usersList[index];
+    const newPass = prompt(`Set new password for "${user.fullname}":`);
+    if (!newPass || newPass.trim() === '') return;
+    usersList[index].password = newPass.trim();
+    localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+    if (firebaseDb) firebaseDb.ref('users').set(usersList).catch(console.warn);
+    logAudit('EDIT', `Reset password for: ${user.username}`);
+    showToast(`Password updated for ${user.fullname}.`, 'success');
+}
+
+// ============================================================
+// SUPER ADMIN — ANNOUNCEMENTS
+// ============================================================
+function postAnnouncement() {
+    const title    = document.getElementById('announce-title').value.trim();
+    const body     = document.getElementById('announce-body').value.trim();
+    const priority = document.getElementById('announce-priority').value;
+    if (!title || !body) { showToast('Fill in both title and message.', 'error'); return; }
+    const list = JSON.parse(localStorage.getItem('pgsmart_announcements') || '[]');
+    const entry = { id: Date.now(), title, body, priority, author: currentUser.username, time: new Date().toISOString() };
+    list.unshift(entry);
+    localStorage.setItem('pgsmart_announcements', JSON.stringify(list));
+    if (firebaseDb) firebaseDb.ref('announcements').set(list).catch(console.warn);
+    logAudit('ADD', `Posted announcement: "${title}"`);
+    document.getElementById('announce-title').value = '';
+    document.getElementById('announce-body').value  = '';
+    showToast('Announcement posted!', 'success');
+    renderAnnouncements();
+    showAnnouncementBanner();
+}
+
+function renderAnnouncements() {
+    const container = document.getElementById('announcements-list');
+    if (!container) return;
+    const list = JSON.parse(localStorage.getItem('pgsmart_announcements') || '[]');
+    if (list.length === 0) { container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">No announcements yet.</div>'; return; }
+    const colors = { info:'#3b82f6', warning:'#f59e0b', urgent:'#ef4444' };
+    container.innerHTML = list.map(a => `
+        <div class="stat-card" style="padding:16px;border-left:4px solid ${colors[a.priority] || '#3b82f6'};">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                    <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;">${a.title}</div>
+                    <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">${a.body}</div>
+                    <div style="font-size:0.75rem;color:var(--text-secondary);">Posted by <strong>${a.author}</strong> · ${new Date(a.time).toLocaleDateString('en-IN')}</div>
+                </div>
+                <button onclick="deleteAnnouncement(${a.id})" style="background:none;border:none;cursor:pointer;color:#ef4444;margin-left:12px;" title="Delete"><i data-lucide="trash-2" style="width:15px;height:15px;"></i></button>
+            </div>
+        </div>`).join('');
+    if (window.lucide) lucide.createIcons();
+}
+
+function deleteAnnouncement(id) {
+    let list = JSON.parse(localStorage.getItem('pgsmart_announcements') || '[]');
+    list = list.filter(a => a.id !== id);
+    localStorage.setItem('pgsmart_announcements', JSON.stringify(list));
+    if (firebaseDb) firebaseDb.ref('announcements').set(list).catch(console.warn);
+    logAudit('DELETE', 'Deleted an announcement');
+    renderAnnouncements();
+    showToast('Announcement deleted.', 'info');
+}
+
+function showAnnouncementBanner() {
+    const list = JSON.parse(localStorage.getItem('pgsmart_announcements') || '[]');
+    const banner = document.getElementById('announce-banner');
+    if (!banner || list.length === 0) return;
+    const latest = list[0];
+    const colors = { info:'#3b82f6', warning:'#f59e0b', urgent:'#ef4444' };
+    banner.style.background = colors[latest.priority] || '#3b82f6';
+    banner.style.color = '#fff';
+    banner.style.display = 'block';
+    banner.innerHTML = `📢 <strong>${latest.title}</strong>: ${latest.body} <span onclick="document.getElementById('announce-banner').style.display='none'" style="cursor:pointer;margin-left:12px;opacity:0.8;">✕</span>`;
+}
+
+// ============================================================
+// SUPER ADMIN — FINANCIALS
+// ============================================================
+function renderFinancials() {
+    const tbody = document.getElementById('fin-table-rows');
+    if (!tbody) return;
+    let totalRevenue = 0, monthRevenue = 0, pendingDues = 0;
+    const now = new Date();
+    tbody.innerHTML = state.tenants.map(t => {
+        const rent = t.rent || 0;
+        const paid = t.paid || 0;
+        const due  = t.due  || 0;
+        totalRevenue += paid;
+        pendingDues  += due;
+        const joinDate = t.joinDate ? new Date(t.joinDate) : null;
+        if (joinDate && joinDate.getMonth() === now.getMonth() && joinDate.getFullYear() === now.getFullYear()) {
+            monthRevenue += paid;
+        }
+        const status = due <= 0 ? '<span class="status-badge badge-paid">Paid</span>' : '<span class="status-badge badge-unpaid">Pending</span>';
+        return `<tr class="table-row-item">
+            <td>${t.name}</td>
+            <td>${t.room || '—'}</td>
+            <td>₹${rent.toLocaleString('en-IN')}</td>
+            <td style="color:#10b981;">₹${paid.toLocaleString('en-IN')}</td>
+            <td style="color:${due > 0 ? '#ef4444' : 'inherit'};">₹${due.toLocaleString('en-IN')}</td>
+            <td>${status}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="6" class="table-empty-row">No tenant data.</td></tr>';
+
+    const stats = calculateStats();
+    const occupancy = stats.totalBeds > 0 ? Math.round((stats.occupiedBeds / stats.totalBeds) * 100) : 0;
+    document.getElementById('fin-total-revenue').textContent = '₹' + totalRevenue.toLocaleString('en-IN');
+    document.getElementById('fin-month-revenue').textContent = '₹' + monthRevenue.toLocaleString('en-IN');
+    document.getElementById('fin-pending-dues').textContent  = '₹' + pendingDues.toLocaleString('en-IN');
+    document.getElementById('fin-occupancy').textContent     = occupancy + '%';
+}
+
+function exportFinancialsCSV() {
+    const rows = ['Tenant,Room,Rent,Paid,Due,Status',
+        ...state.tenants.map(t => `"${t.name}","${t.room || ''}",${t.rent||0},${t.paid||0},${t.due||0},"${t.due > 0 ? 'Pending' : 'Paid'}"`)
+    ].join('\n');
+    downloadCSV(rows, 'financials.csv');
+    logAudit('EXPORT', 'Exported financials as CSV');
+}
+
+function exportAllDataCSV() {
+    const tenants = state.tenants.map(t => `"${t.name}","${t.room||''}",${t.rent||0},${t.paid||0},${t.due||0}`).join('\n');
+    const csv = 'Name,Room,Rent,Paid,Due\n' + tenants;
+    downloadCSV(csv, 'pgsmart_all_data.csv');
+    logAudit('EXPORT', 'Exported all app data as CSV');
+}
+
+function downloadCSV(csv, filename) {
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+}
+
+// ============================================================
+// SUPER ADMIN — SYSTEM SETTINGS
+// ============================================================
+function loadSuperAdminSettings() {
+    const s = JSON.parse(localStorage.getItem('pgsmart_sa_settings') || '{}');
+    if (document.getElementById('sa-pg-name'))    document.getElementById('sa-pg-name').value    = s.pgName    || '';
+    if (document.getElementById('sa-pg-phone'))   document.getElementById('sa-pg-phone').value   = s.pgPhone   || '';
+    if (document.getElementById('sa-pg-address')) document.getElementById('sa-pg-address').value = s.pgAddress || '';
+    if (document.getElementById('sa-due-day'))    document.getElementById('sa-due-day').value    = s.dueDay    || 5;
+    if (document.getElementById('sa-late-fee'))   document.getElementById('sa-late-fee').value   = s.lateFee   || 100;
+    if (document.getElementById('sa-grace'))      document.getElementById('sa-grace').value      = s.grace     || 2;
+    const maint = document.getElementById('sa-maintenance');
+    const slider = document.getElementById('maintenance-slider');
+    if (maint) maint.checked = s.maintenance || false;
+    if (slider) slider.style.background = (s.maintenance) ? 'var(--accent)' : 'var(--border-color)';
+}
+
+function savePGInfo() {
+    const s = JSON.parse(localStorage.getItem('pgsmart_sa_settings') || '{}');
+    s.pgName    = document.getElementById('sa-pg-name').value.trim();
+    s.pgPhone   = document.getElementById('sa-pg-phone').value.trim();
+    s.pgAddress = document.getElementById('sa-pg-address').value.trim();
+    localStorage.setItem('pgsmart_sa_settings', JSON.stringify(s));
+    if (firebaseDb) firebaseDb.ref('sa_settings').set(s).catch(console.warn);
+    logAudit('EDIT', `Updated PG info: ${s.pgName}`);
+    showToast('PG info saved!', 'success');
+}
+
+function saveLateFeeRules() {
+    const s = JSON.parse(localStorage.getItem('pgsmart_sa_settings') || '{}');
+    s.dueDay  = parseInt(document.getElementById('sa-due-day').value)  || 5;
+    s.lateFee = parseInt(document.getElementById('sa-late-fee').value) || 100;
+    s.grace   = parseInt(document.getElementById('sa-grace').value)    || 2;
+    localStorage.setItem('pgsmart_sa_settings', JSON.stringify(s));
+    if (firebaseDb) firebaseDb.ref('sa_settings').set(s).catch(console.warn);
+    logAudit('EDIT', `Updated late fee rules: ₹${s.lateFee}/day after day ${s.dueDay}`);
+    showToast('Late fee rules saved!', 'success');
+}
+
+function changeOwnPassword() {
+    const np = document.getElementById('sa-new-password').value.trim();
+    const cp = document.getElementById('sa-confirm-password').value.trim();
+    if (!np || !cp)       { showToast('Please fill both fields.', 'error'); return; }
+    if (np !== cp)        { showToast('Passwords do not match.', 'error'); return; }
+    if (np.length < 6)    { showToast('Password must be at least 6 characters.', 'error'); return; }
+    const idx = usersList.findIndex(u => u.username.toLowerCase() === currentUser.username.toLowerCase());
+    if (idx === -1) { showToast('User not found.', 'error'); return; }
+    usersList[idx].password = np;
+    currentUser.password = np;
+    sessionStorage.setItem('pgsmart_current_user', JSON.stringify(currentUser));
+    localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
+    if (firebaseDb) firebaseDb.ref('users').set(usersList).catch(console.warn);
+    logAudit('EDIT', 'Changed own password');
+    document.getElementById('sa-new-password').value = '';
+    document.getElementById('sa-confirm-password').value = '';
+    showToast('Password updated successfully!', 'success');
+}
+
+function toggleMaintenanceMode(on) {
+    const s = JSON.parse(localStorage.getItem('pgsmart_sa_settings') || '{}');
+    s.maintenance = on;
+    localStorage.setItem('pgsmart_sa_settings', JSON.stringify(s));
+    if (firebaseDb) firebaseDb.ref('sa_settings').set(s).catch(console.warn);
+    const slider = document.getElementById('maintenance-slider');
+    if (slider) slider.style.background = on ? 'var(--accent)' : 'var(--border-color)';
+    logAudit('EDIT', `Maintenance mode: ${on ? 'ON' : 'OFF'}`);
+    showToast(`Maintenance mode ${on ? 'enabled' : 'disabled'}.`, on ? 'warning' : 'success');
+}
+
+function clearAllData() {
+    if (!confirm('⚠️ This will delete ALL tenants, rooms and complaints. Are you sure?')) return;
+    if (!confirm('This is PERMANENT. Type OK to confirm.')) return;
+    state.tenants    = [];
+    state.rooms      = [];
+    state.complaints = [];
+    saveData('all');
+    logAudit('DELETE', 'Cleared all app data');
+    showToast('All data cleared.', 'info');
+    switchView('dashboard');
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
     // 1. Initialize DB
-    initDatabase();
+    await initDatabase();
     checkMonthlyRentCycle();
     checkAuth();
     loadSavedCredentials();
@@ -2017,17 +2960,12 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // 2. Start Onboarding Preloader removal
-    setTimeout(() => {
-        const preloader = document.getElementById("preloader");
-        if (preloader) {
-            preloader.classList.add("fade-out");
-            setTimeout(() => preloader.remove(), 600);
-        }
-    }, 1800);
+    // 2. Preloader is dismissed inside initDatabase() as soon as local cache loads
 
     // 3. Setup Clock
     initLiveClock();
+    // Show latest announcement banner
+    showAnnouncementBanner();
 
     // 4. Bind Sidebar Navigation
     const navLinks = document.querySelectorAll(".sidebar-nav li");
@@ -2041,9 +2979,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // 5. Mobile Hamburger toggle
     const hamburger = document.getElementById("btn-mobile-toggle");
     const sidebar = document.getElementById("app-sidebar");
+    const backdrop = document.getElementById("sidebar-backdrop");
     if (hamburger && sidebar) {
         hamburger.addEventListener("click", () => {
             sidebar.classList.toggle("mobile-active");
+            if (backdrop) backdrop.classList.toggle("active");
         });
     }
 
@@ -2139,4 +3079,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Initialize display with default active tab
     switchView('dashboard');
+});
+
+// Safety net: force dismiss preloader after 3 seconds no matter what
+window.addEventListener('load', function() {
+    setTimeout(function() {
+        const preloader = document.getElementById('preloader');
+        if (preloader && preloader.style.display !== 'none') {
+            preloader.classList.add('fade-out');
+            setTimeout(() => { if (preloader.parentNode) preloader.remove(); }, 600);
+        }
+    }, 3000);
 });
