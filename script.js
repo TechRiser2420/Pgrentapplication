@@ -206,6 +206,16 @@ function getFirebaseBasePath() {
     return `guest_data`;
 }
 
+    }
+}
+
+function getFirebaseBasePath() {
+    if (currentUser) {
+        return `users_data/${currentUser.username.toLowerCase()}`;
+    }
+    return `guest_data`;
+}
+
 function loadLocalCache() {
     const roomsKey = getDbKey('rooms');
     const tenantsKey = getDbKey('tenants');
@@ -230,6 +240,30 @@ function loadLocalCache() {
     state.complaints = JSON.parse(localStorage.getItem(complaintsKey));
     state.settings = JSON.parse(localStorage.getItem(settingsKey));
 }
+
+// Wraps Firebase promise with a timeout so app never hangs
+function firebaseWithTimeout(promise, ms = 5000) {
+    const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Firebase timed out")), ms)
+    );
+    return Promise.race([promise, timeout]);
+}
+
+async function initDatabase() {
+    // Seed default users if none exist
+    if (!localStorage.getItem('pgsmart_users')) {
+        const defaultUserList = [
+            { fullname: "Adithya Rachamadugu", username: "Adithya", password: "Adithya123@", role: "Super Admin" },
+            { fullname: "Sarah Connor", username: "admin", password: "admin123", role: "Super Admin" }
+        ];
+        localStorage.setItem('pgsmart_users', JSON.stringify(defaultUserList));
+    }
+    usersList = JSON.parse(localStorage.getItem('pgsmart_users'));
+
+    // Restore session
+    const savedSession = sessionStorage.getItem('pgsmart_current_user');
+    currentUser = savedSession ? JSON.parse(savedSession) : null;
+
 
 // Wraps Firebase promise with a timeout so app never hangs
 function firebaseWithTimeout(promise, ms = 5000) {
@@ -2633,6 +2667,11 @@ function checkAuth() {
     const btnLogout   = document.getElementById("btn-logout");
     const navUsers    = document.getElementById("nav-users");
     const acctControl = document.getElementById("header-account-control");
+    const btnTrigger = document.getElementById("btn-auth-trigger");
+    const nameEl = document.getElementById("sidebar-admin-name");
+    const roleEl = document.getElementById("sidebar-admin-role");
+    const btnLogout = document.getElementById("btn-logout");
+    const navUsers = document.getElementById("nav-users");
     
     if (currentUser) {
         // Logged in user
