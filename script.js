@@ -206,16 +206,6 @@ function getFirebaseBasePath() {
     return `guest_data`;
 }
 
-    }
-}
-
-function getFirebaseBasePath() {
-    if (currentUser) {
-        return `users_data/${currentUser.username.toLowerCase()}`;
-    }
-    return `guest_data`;
-}
-
 function loadLocalCache() {
     const roomsKey = getDbKey('rooms');
     const tenantsKey = getDbKey('tenants');
@@ -240,30 +230,6 @@ function loadLocalCache() {
     state.complaints = JSON.parse(localStorage.getItem(complaintsKey));
     state.settings = JSON.parse(localStorage.getItem(settingsKey));
 }
-
-// Wraps Firebase promise with a timeout so app never hangs
-function firebaseWithTimeout(promise, ms = 5000) {
-    const timeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Firebase timed out")), ms)
-    );
-    return Promise.race([promise, timeout]);
-}
-
-async function initDatabase() {
-    // Seed default users if none exist
-    if (!localStorage.getItem('pgsmart_users')) {
-        const defaultUserList = [
-            { fullname: "Adithya Rachamadugu", username: "Adithya", password: "Adithya123@", role: "Super Admin" },
-            { fullname: "Sarah Connor", username: "admin", password: "admin123", role: "Super Admin" }
-        ];
-        localStorage.setItem('pgsmart_users', JSON.stringify(defaultUserList));
-    }
-    usersList = JSON.parse(localStorage.getItem('pgsmart_users'));
-
-    // Restore session
-    const savedSession = sessionStorage.getItem('pgsmart_current_user');
-    currentUser = savedSession ? JSON.parse(savedSession) : null;
-
 
 // Wraps Firebase promise with a timeout so app never hangs
 function firebaseWithTimeout(promise, ms = 5000) {
@@ -469,10 +435,10 @@ function checkRentReminder() {
     // Only run when someone is logged in
     if (!currentUser) return;
 
-    const now      = new Date();
-    const day      = now.getDate();
-    const month    = now.getMonth() + 1;
-    const year     = now.getFullYear();
+    const now = new Date();
+    const day = now.getDate();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
 
     // Reminder fires on day 11, 16, 21, 26 (every 5 days after 10th)
     const reminderDays = [11, 16, 21, 26];
@@ -480,8 +446,8 @@ function checkRentReminder() {
     if (!isReminderDay) return;
 
     // Check if we already showed reminder today (avoid re-showing on refresh)
-    const shownKey  = getDbKey(`rent_reminder_shown`);
-    const todayStr  = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const shownKey = getDbKey(`rent_reminder_shown`);
+    const todayStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const lastShown = localStorage.getItem(shownKey);
     if (lastShown === todayStr) return;
 
@@ -495,15 +461,15 @@ function checkRentReminder() {
     localStorage.setItem(shownKey, todayStr);
 
     // Calculate next reminder date
-    const nextDay      = reminderDays.find(d => d > day) || 11;
-    const nextMonth    = nextDay === 11 && day >= 26 ? month + 1 : month;
-    const nextDate     = new Date(year, nextMonth - 1, nextDay);
-    const nextDateStr  = nextDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long' });
+    const nextDay = reminderDays.find(d => d > day) || 11;
+    const nextMonth = nextDay === 11 && day >= 26 ? month + 1 : month;
+    const nextDate = new Date(year, nextMonth - 1, nextDay);
+    const nextDateStr = nextDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long' });
 
     // Build the banner content
-    const pgName   = state.settings.pgName || 'PGSmart';
+    const pgName = state.settings.pgName || 'PGSmart';
     const monthName = now.toLocaleString('en-IN', { month: 'long' });
-    const dateStr   = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+    const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 
     document.getElementById('rent-reminder-title').textContent =
         `⚠️  ${overdueTenants.length} tenant${overdueTenants.length > 1 ? 's have' : ' has'} not paid rent — ${monthName} ${year}`;
@@ -511,19 +477,19 @@ function checkRentReminder() {
 
     const listEl = document.getElementById('rent-reminder-list');
     listEl.innerHTML = overdueTenants.map(t => {
-        const due  = t.due || 0;
+        const due = t.due || 0;
         const phone = (t.phone || '').replace(/[^0-9]/g, '');
         const formattedPhone = phone.length === 10 ? '91' + phone : phone;
 
         const message =
-`🏠 *${pgName}*
+            `🏠 *${pgName}*
 ⚠️ *Rent Due Reminder — ${monthName} ${year}*
 ━━━━━━━━━━━━━━━━━━━━
 👤 Tenant: *${t.name}*
 🚪 Room: *${t.room}*
 📅 Reminder Date: ${dateStr}
 ━━━━━━━━━━━━━━━━━━━━
-💰 Monthly Rent: ₹${(t.rent||0).toLocaleString('en-IN')}
+💰 Monthly Rent: ₹${(t.rent || 0).toLocaleString('en-IN')}
 ⚠️ Amount Due: *₹${due.toLocaleString('en-IN')}*
 ━━━━━━━━━━━━━━━━━━━━
 Your rent is overdue. Please pay at the earliest to avoid late fees. Thank you! 🙏`;
@@ -571,7 +537,7 @@ function logAuditIfAvailable(msg) {
 // ----------------------------------------------------
 function calculateStats() {
     const totalRooms = state.rooms.length;
-    
+
     // Calculate actual occupied beds by mapping tenants to rooms
     const occupiedBedsCount = state.tenants.length;
     const totalBedsCapacity = state.rooms.reduce((sum, r) => sum + r.capacity, 0);
@@ -644,7 +610,7 @@ function renderDashboard() {
 function animateValue(id, value, isCurrency = false) {
     const el = document.getElementById(id);
     if (!el) return;
-    
+
     let start = 0;
     const end = parseInt(value);
     if (isNaN(end)) {
@@ -760,14 +726,14 @@ function renderAnalyticsCharts(stats) {
 
     // Custom glowing theme styles based on current accent
     const currentAccent = state.settings.accentColor || 'cyan';
-    const accentHex = currentAccent === 'cyan' ? '#00f2fe' : 
-                      currentAccent === 'purple' ? '#8a2be2' : 
-                      currentAccent === 'green' ? '#00ff87' : '#f5af19';
+    const accentHex = currentAccent === 'cyan' ? '#00f2fe' :
+        currentAccent === 'purple' ? '#8a2be2' :
+            currentAccent === 'green' ? '#00ff87' : '#f5af19';
 
     // Revenue Trend Chart (Area Chart)
     // Build real monthly collection data from tenants — no fake hardcoded values
     const monthLabels = [];
-    const monthData   = [];
+    const monthData = [];
     const now = new Date();
     for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -824,8 +790,8 @@ function renderAnalyticsCharts(stats) {
     const totalBedsCap = state.rooms.reduce((sum, r) => sum + (r.capacity || 0), 0);
     const occupiedCount = state.tenants.length;
     const vacatingCount = state.tenants.filter(t => t.vacating).length;
-    const stayingCount  = Math.max(0, occupiedCount - vacatingCount);
-    const freeCount     = Math.max(0, totalBedsCap - occupiedCount);
+    const stayingCount = Math.max(0, occupiedCount - vacatingCount);
+    const freeCount = Math.max(0, totalBedsCap - occupiedCount);
 
     occupancyChart = new Chart(ctxOccupancy, {
         type: 'doughnut',
@@ -848,7 +814,7 @@ function renderAnalyticsCharts(stats) {
                 },
                 tooltip: {
                     callbacks: {
-                        label: function(ctx) {
+                        label: function (ctx) {
                             return ` ${ctx.label}: ${ctx.parsed} bed${ctx.parsed !== 1 ? 's' : ''}`;
                         }
                     }
@@ -870,12 +836,12 @@ function renderTenants() {
     // Apply Search and filters
     let filtered = state.tenants.filter(t => {
         const matchesSearch = t.name.toLowerCase().includes(tenantFilters.search.toLowerCase()) ||
-                              t.phone.includes(tenantFilters.search) ||
-                              t.room.includes(tenantFilters.search) ||
-                              (t.occupation && t.occupation.toLowerCase().includes(tenantFilters.search.toLowerCase()));
-        
+            t.phone.includes(tenantFilters.search) ||
+            t.room.includes(tenantFilters.search) ||
+            (t.occupation && t.occupation.toLowerCase().includes(tenantFilters.search.toLowerCase()));
+
         const matchesStatus = tenantFilters.status === 'all' || t.status.toLowerCase() === tenantFilters.status.toLowerCase();
-        
+
         // Match Room Type filter by loading matching room info
         let matchesType = true;
         if (tenantFilters.type !== 'all') {
@@ -889,7 +855,7 @@ function renderTenants() {
     // Pagination calculations
     const totalItems = filtered.length;
     const totalPages = Math.ceil(totalItems / tenantPageState.pageSize) || 1;
-    
+
     if (tenantPageState.currentPage > totalPages) {
         tenantPageState.currentPage = totalPages;
     }
@@ -974,11 +940,11 @@ function openTenantModal(id = null) {
     const modal = document.getElementById("tenant-modal");
     const title = document.getElementById("tenant-modal-title");
     const form = document.getElementById("tenant-form");
-    
+
     // Clear room list and populate
     const roomSelect = document.getElementById("form-tenant-room");
     roomSelect.innerHTML = '<option value="">Select Room</option>';
-    
+
     // Only show rooms with available beds or the current room of the tenant
     const currentTenant = id ? state.tenants.find(t => t.id === id) : null;
 
@@ -986,7 +952,7 @@ function openTenantModal(id = null) {
         const occupants = state.tenants.filter(t => t.room === room.roomNumber).length;
         const hasSpace = occupants < room.capacity;
         const isCurrentRoom = currentTenant && currentTenant.room === room.roomNumber;
-        
+
         if (hasSpace || isCurrentRoom) {
             const option = document.createElement("option");
             option.value = room.roomNumber;
@@ -998,7 +964,7 @@ function openTenantModal(id = null) {
     if (id) {
         title.innerText = "Edit Tenant Details";
         const tenant = state.tenants.find(t => t.id === id);
-        
+
         document.getElementById("form-tenant-id").value = tenant.id;
         document.getElementById("form-tenant-name").value = tenant.name;
         document.getElementById("form-tenant-phone").value = tenant.phone;
@@ -1016,7 +982,7 @@ function openTenantModal(id = null) {
         document.getElementById("form-tenant-id").value = "";
         document.getElementById("form-tenant-joining").value = new Date().toISOString().split("T")[0];
     }
-    
+
     modal.classList.add("active");
 }
 
@@ -1079,7 +1045,7 @@ function handleTenantSubmit(e) {
 function deleteTenant(id) {
     const tenant = state.tenants.find(t => t.id === id);
     if (!tenant) return;
-    
+
     if (confirm(`Are you sure you want to checkout/remove ${tenant.name}?`)) {
         state.tenants = state.tenants.filter(t => t.id !== id);
         addActivity(`Removed tenant: ${tenant.name} from Room ${tenant.room}`, 'trash-2');
@@ -1110,7 +1076,7 @@ function startVoiceSearch() {
 
     recognition.start();
 
-    recognition.onresult = function(event) {
+    recognition.onresult = function (event) {
         const speechResult = event.results[0][0].transcript.toLowerCase().trim();
         document.getElementById("tenant-search-input").value = speechResult;
         tenantFilters.search = speechResult;
@@ -1118,12 +1084,12 @@ function startVoiceSearch() {
         showToast(`Searching for: "${speechResult}"`, "success");
     };
 
-    recognition.onspeechend = function() {
+    recognition.onspeechend = function () {
         recognition.stop();
         micBtn.classList.remove("listening");
     };
 
-    recognition.onerror = function(event) {
+    recognition.onerror = function (event) {
         micBtn.classList.remove("listening");
         showToast(`Voice Search Error: ${event.error}`, "error");
     };
@@ -1139,7 +1105,7 @@ function renderRooms() {
 
     let filtered = state.rooms.filter(room => {
         const matchesFloor = roomFilters.floor === 'all' || Number(room.floor) === Number(roomFilters.floor);
-        
+
         let matchesStatus = true;
         const occupantsCount = state.tenants.filter(t => t.room === room.roomNumber).length;
         if (roomFilters.status === 'vacant') {
@@ -1160,10 +1126,10 @@ function renderRooms() {
         const occupants = state.tenants.filter(t => t.room === room.roomNumber);
         const count = occupants.length;
         const available = room.capacity - count;
-        
+
         let statusText = "Vacant";
         let statusClass = "room-vacant";
-        
+
         if (count >= room.capacity) {
             statusText = "Fully Occupied";
             statusClass = "room-full";
@@ -1174,7 +1140,7 @@ function renderRooms() {
 
         const card = document.createElement("div");
         card.className = `room-card ${statusClass}`;
-        
+
         // Build avatars list
         let avatarsHTML = "";
         occupants.forEach(occ => {
@@ -1299,16 +1265,16 @@ function copyRoomConfig(roomNum) {
     if (!room) return;
 
     openRoomModal(); // opens in create mode
-    
+
     // Auto-fill configuration values
     document.getElementById("form-room-number").value = "";
     document.getElementById("form-room-number").focus();
-    
+
     document.getElementById("form-room-type").value = room.type;
     document.getElementById("form-room-ac").checked = room.ac;
     document.getElementById("form-room-rent").value = room.rent;
     document.getElementById("form-room-floor").value = room.floor;
-    
+
     showToast(`Copied configuration of Room ${roomNum}. Enter new number & floor to save.`, "info");
 }
 
@@ -1383,7 +1349,7 @@ function openPayModal(tenantId) {
     document.getElementById("pay-tenant-name").innerText = tenant.name;
     document.getElementById("pay-room-number").innerText = `Room ${tenant.room}`;
     document.getElementById("pay-monthly-rent").innerText = `₹${tenant.rent.toLocaleString('en-IN')}`;
-    
+
     const dueField = document.getElementById("pay-due-amount");
     dueField.value = tenant.due;
 
@@ -1397,19 +1363,19 @@ function openPayModal(tenantId) {
     generatePayQR(tenant.due, tenant.name, tenant.room);
 
     // Watch due amount change to update QR Code
-    dueField.oninput = function() {
+    dueField.oninput = function () {
         generatePayQR(this.value, tenant.name, tenant.room);
     };
 
     // Vacating toggle
-    const vacChk  = document.getElementById('pay-vacating');
-    const vacBox  = document.getElementById('pay-vacating-date-box');
+    const vacChk = document.getElementById('pay-vacating');
+    const vacBox = document.getElementById('pay-vacating-date-box');
     const vacDate = document.getElementById('pay-vacating-date');
     if (vacChk) {
         vacChk.checked = tenant.vacating || false;
         if (vacBox) vacBox.style.display = tenant.vacating ? 'block' : 'none';
         if (vacDate) vacDate.value = tenant.vacatingDate || '';
-        vacChk.onchange = function() {
+        vacChk.onchange = function () {
             if (vacBox) vacBox.style.display = this.checked ? 'block' : 'none';
         };
     }
@@ -1501,8 +1467,8 @@ function handlePaySubmit(e) {
         newStatus = "Paid";
     }
 
-    const vacating     = document.getElementById('pay-vacating')      ? document.getElementById('pay-vacating').checked      : false;
-    const vacatingDate = document.getElementById('pay-vacating-date') ? document.getElementById('pay-vacating-date').value   : '';
+    const vacating = document.getElementById('pay-vacating') ? document.getElementById('pay-vacating').checked : false;
+    const vacatingDate = document.getElementById('pay-vacating-date') ? document.getElementById('pay-vacating-date').value : '';
 
     state.tenants[tenantIdx] = {
         ...tenant,
@@ -1517,11 +1483,11 @@ function handlePaySubmit(e) {
     saveData('tenants');
     addActivity(`Recorded payment updates for ${tenant.name} (Due: ₹${due})`, 'credit-card');
     showToast(`Payment updated for ${tenant.name}`, "success");
-    
+
     closePayModal();
     renderTenants();
     renderDashboard();
-    
+
     // Automatically trigger receipt print option if marked paid
     if (newStatus === "Paid" && oldStatus !== "Paid") {
         if (confirm("Would you like to print/download the Rent Receipt for this payment?")) {
@@ -1535,7 +1501,7 @@ function triggerReceiptPrint(tenant) {
     // Create hidden/printable div
     const receiptId = `REC-${Date.now().toString().slice(-6)}`;
     const printWindow = window.open('', '_blank');
-    
+
     const styles = `
         body { font-family: 'Inter', sans-serif; color: #1e293b; padding: 40px; line-height: 1.6; }
         .receipt-container { border: 2px solid #e2e8f0; border-radius: 12px; padding: 30px; max-width: 600px; margin: 0 auto; }
@@ -1643,19 +1609,19 @@ function sendWhatsAppBill(tenantId) {
     const tenant = state.tenants.find(t => t.id === tenantId);
     if (!tenant) return;
 
-    const name    = tenant.name;
-    const room    = tenant.room;
-    const rent    = tenant.rent;
-    const due     = tenant.due || 0;
-    const phone   = tenant.phone;
-    const pgName  = state.settings.pgName || "PGSmart Rental";
-    const upiId   = (state.settings.upiId || '').trim();
+    const name = tenant.name;
+    const room = tenant.room;
+    const rent = tenant.rent;
+    const due = tenant.due || 0;
+    const phone = tenant.phone;
+    const pgName = state.settings.pgName || "PGSmart Rental";
+    const upiId = (state.settings.upiId || '').trim();
 
-    const now       = new Date();
+    const now = new Date();
     const monthName = now.toLocaleString('en-IN', { month: 'long' });
-    const year      = now.getFullYear();
-    const dateStr   = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
-    const paidAmt   = Math.max(0, rent - due);
+    const year = now.getFullYear();
+    const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+    const paidAmt = Math.max(0, rent - due);
 
     // ── Build UPI deep-link ──
     // If owner has set their UPI ID → pre-fill their account (one-tap pay)
@@ -1668,11 +1634,11 @@ function sendWhatsAppBill(tenantId) {
         if (upiId) {
             // Owner-specific: pre-fills their UPI ID + exact amount
             upiDeepLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${upiName}&am=${due}&cu=INR&tn=${upiNote}`;
-            upiPayLine  = `\n💳 *Pay Now (${upiId}):*\n${upiDeepLink}`;
+            upiPayLine = `\n💳 *Pay Now (${upiId}):*\n${upiDeepLink}`;
         } else {
             // No UPI ID: opens app chooser with amount pre-filled, tenant picks app
             upiDeepLink = `upi://pay?am=${due}&cu=INR&tn=${upiNote}`;
-            upiPayLine  = `\n💳 *Pay ₹${due.toLocaleString('en-IN')} via UPI:*\n${upiDeepLink}`;
+            upiPayLine = `\n💳 *Pay ₹${due.toLocaleString('en-IN')} via UPI:*\n${upiDeepLink}`;
         }
     }
 
@@ -1683,7 +1649,7 @@ function sendWhatsAppBill(tenantId) {
     let message = "";
     if (due > 0) {
         message =
-`🏠 *${pgName}*
+            `🏠 *${pgName}*
 📋 *Rent Bill — ${monthName} ${year}*
 ━━━━━━━━━━━━━━━━━━━━
 👤 Tenant: *${name}*
@@ -1698,7 +1664,7 @@ function sendWhatsAppBill(tenantId) {
 Tap the link above to pay instantly via GPay, PhonePe or any UPI app. Thank you! 🙏`;
     } else {
         message =
-`🏠 *${pgName}*
+            `🏠 *${pgName}*
 📋 *Rent Receipt — ${monthName} ${year}*
 ━━━━━━━━━━━━━━━━━━━━
 👤 Tenant: *${name}*
@@ -1784,7 +1750,7 @@ function generateTenantBillPDF(tenant, ctx) {
     const generateAndSave = () => {
         const opt = {
             margin: 0,
-            filename: `${pgName.replace(/[^a-zA-Z0-9]/g,'_')}_${tenant.name.replace(/[^a-zA-Z0-9]/g,'_')}_${monthName}_${year}.pdf`,
+            filename: `${pgName.replace(/[^a-zA-Z0-9]/g, '_')}_${tenant.name.replace(/[^a-zA-Z0-9]/g, '_')}_${monthName}_${year}.pdf`,
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { scale: 2 },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
@@ -1827,11 +1793,11 @@ function exportTenantsToExcel() {
         return;
     }
 
-    const pgName  = state.settings.pgName || 'PGSmart Rental Application';
+    const pgName = state.settings.pgName || 'PGSmart Rental Application';
     const dateStr = new Date().toLocaleDateString('en-IN');
-    const now     = new Date();
-    const month   = now.toLocaleString('en-IN', { month: 'long' });
-    const year    = now.getFullYear();
+    const now = new Date();
+    const month = now.toLocaleString('en-IN', { month: 'long' });
+    const year = now.getFullYear();
 
     // ── Sheet 1: Tenant Details ──
     const tenantRows = [
@@ -1842,7 +1808,7 @@ function exportTenantsToExcel() {
     ];
     state.tenants.forEach((t, i) => {
         const rent = t.rent || 0;
-        const due  = t.due  || 0;
+        const due = t.due || 0;
         const paid = Math.max(0, rent - due);
         tenantRows.push([
             i + 1,
@@ -1882,29 +1848,29 @@ function exportTenantsToExcel() {
     });
 
     // ── Sheet 3: Financial Summary ──
-    const totalRent      = state.tenants.reduce((s, t) => s + (t.rent || 0), 0);
-    const totalDue       = state.tenants.reduce((s, t) => s + (t.due  || 0), 0);
+    const totalRent = state.tenants.reduce((s, t) => s + (t.rent || 0), 0);
+    const totalDue = state.tenants.reduce((s, t) => s + (t.due || 0), 0);
     const totalCollected = totalRent - totalDue;
-    const paidCount      = state.tenants.filter(t => t.status === 'Paid').length;
-    const pendingCount   = state.tenants.filter(t => t.status !== 'Paid').length;
-    const vacatingCount  = state.tenants.filter(t => t.vacating).length;
-    const totalCapacity  = state.rooms.reduce((s, r) => s + (r.capacity || 0), 0);
+    const paidCount = state.tenants.filter(t => t.status === 'Paid').length;
+    const pendingCount = state.tenants.filter(t => t.status !== 'Paid').length;
+    const vacatingCount = state.tenants.filter(t => t.vacating).length;
+    const totalCapacity = state.rooms.reduce((s, r) => s + (r.capacity || 0), 0);
 
     const finRows = [
         [`${pgName} — Financial Summary (${month} ${year})`],
         [],
         ['Metric', 'Value'],
-        ['Total Tenants',            state.tenants.length],
-        ['Paid Tenants',             paidCount],
-        ['Pending / Overdue',        pendingCount],
-        ['Vacating Soon',            vacatingCount],
-        ['Total Rent Expected (₹)',  totalRent],
-        ['Total Collected (₹)',      totalCollected],
-        ['Total Dues Pending (₹)',   totalDue],
-        ['Total Rooms',              state.rooms.length],
-        ['Total Bed Capacity',       totalCapacity],
-        ['Occupied Beds',            state.tenants.length],
-        ['Vacant Beds',              Math.max(0, totalCapacity - state.tenants.length)]
+        ['Total Tenants', state.tenants.length],
+        ['Paid Tenants', paidCount],
+        ['Pending / Overdue', pendingCount],
+        ['Vacating Soon', vacatingCount],
+        ['Total Rent Expected (₹)', totalRent],
+        ['Total Collected (₹)', totalCollected],
+        ['Total Dues Pending (₹)', totalDue],
+        ['Total Rooms', state.rooms.length],
+        ['Total Bed Capacity', totalCapacity],
+        ['Occupied Beds', state.tenants.length],
+        ['Vacant Beds', Math.max(0, totalCapacity - state.tenants.length)]
     ];
 
     // Build workbook
@@ -2005,7 +1971,7 @@ function handleComplaintSubmit(e) {
 function updateComplaintStatus(id, newStatus) {
     const idx = state.complaints.findIndex(c => c.id === id);
     if (idx === -1) return;
-    
+
     state.complaints[idx].status = newStatus;
     saveData('complaints');
     addActivity(`Complaint ${id} status updated to: ${newStatus}`, 'check-circle');
@@ -2075,7 +2041,7 @@ function openUserModal(index = null) {
     document.getElementById('user-modal-fullname').value = index !== null ? usersList[index].fullname : '';
     document.getElementById('user-modal-username').value = index !== null ? usersList[index].username : '';
     document.getElementById('user-modal-password').value = index !== null ? usersList[index].password : '';
-    document.getElementById('user-modal-role').value     = index !== null ? usersList[index].role     : 'Admin';
+    document.getElementById('user-modal-role').value = index !== null ? usersList[index].role : 'Admin';
     document.getElementById('user-modal-title').textContent = index !== null ? 'Edit User' : 'Add New User';
     document.getElementById('user-modal').classList.add('active');
 }
@@ -2085,11 +2051,11 @@ function closeUserModal() {
 }
 
 async function saveUser() {
-    const index    = document.getElementById('user-modal-index').value;
+    const index = document.getElementById('user-modal-index').value;
     const fullname = document.getElementById('user-modal-fullname').value.trim();
     const username = document.getElementById('user-modal-username').value.trim();
     const password = document.getElementById('user-modal-password').value.trim();
-    const role     = document.getElementById('user-modal-role').value;
+    const role = document.getElementById('user-modal-role').value;
 
     if (!fullname || !username || !password) {
         showToast("Please fill in all fields.", "error");
@@ -2141,14 +2107,14 @@ async function deleteUser(index) {
 // ----------------------------------------------------
 const CHATBOT_RESPONSES = {
     help: "Available keywords: **rooms**, **dues**, **wifi**, **food**, **contact**, **rent**.",
-    rooms: function() {
+    rooms: function () {
         const stats = calculateStats();
         return `We currently have **${stats.vacantRooms} Vacant Rooms** and **${stats.vacantBeds} Available Beds** out of a total capacity of ${stats.totalBeds}.`;
     },
-    dues: function() {
+    dues: function () {
         const unpaid = state.tenants.filter(t => t.due > 0);
         if (unpaid.length === 0) return "Hurrah! All tenants have fully paid their dues.";
-        
+
         let msg = `We have ${unpaid.length} tenants with outstanding dues:\n`;
         unpaid.forEach(u => {
             msg += `• **${u.name}** (Room ${u.room}): ₹${u.due.toLocaleString('en-IN')}\n`;
@@ -2184,14 +2150,14 @@ function appendChatMessage(sender, text, type) {
 }
 
 function buildPGContext() {
-    const totalRent      = state.tenants.reduce((s, t) => s + (t.rent || 0), 0);
-    const totalDue       = state.tenants.reduce((s, t) => s + (t.due  || 0), 0);
+    const totalRent = state.tenants.reduce((s, t) => s + (t.rent || 0), 0);
+    const totalDue = state.tenants.reduce((s, t) => s + (t.due || 0), 0);
     const totalCollected = totalRent - totalDue;
-    const totalBeds      = state.rooms.reduce((s, r) => s + (r.capacity || 0), 0);
-    const occupied       = state.tenants.length;
-    const vacant         = Math.max(0, totalBeds - occupied);
-    const unpaid         = state.tenants.filter(t => t.status !== 'Paid');
-    const vacating       = state.tenants.filter(t => t.vacating);
+    const totalBeds = state.rooms.reduce((s, r) => s + (r.capacity || 0), 0);
+    const occupied = state.tenants.length;
+    const vacant = Math.max(0, totalBeds - occupied);
+    const unpaid = state.tenants.filter(t => t.status !== 'Paid');
+    const vacating = state.tenants.filter(t => t.vacating);
 
     return `You are a smart AI assistant for a PG (Paying Guest) rental management app called "${state.settings.pgName || 'PGSmart'}".
 Answer the owner's questions using ONLY the live data below. Be concise, specific, and helpful.
@@ -2199,7 +2165,7 @@ Use bullet points for lists. Keep answers under 120 words. Never make up data.
 
 === LIVE PG DATA ===
 Total Tenants: ${state.tenants.length}
-Paid Tenants: ${state.tenants.filter(t=>t.status==='Paid').length}
+Paid Tenants: ${state.tenants.filter(t => t.status === 'Paid').length}
 Unpaid/Overdue: ${unpaid.length}
 Vacating Soon: ${vacating.length}
 Total Rooms: ${state.rooms.length} | Total Beds: ${totalBeds} | Occupied: ${occupied} | Vacant: ${vacant}
@@ -2208,38 +2174,38 @@ Total Collected: ₹${totalCollected.toLocaleString('en-IN')}
 Total Dues Pending: ₹${totalDue.toLocaleString('en-IN')}
 
 === TENANTS ===
-${state.tenants.map(t=>`• ${t.name} | Room ${t.room} | Rent ₹${t.rent||0} | Due ₹${t.due||0} | ${t.status}${t.vacating?' | VACATING '+(t.vacatingDate||'soon'):''}`).join('\n') || 'No tenants yet.'}
+${state.tenants.map(t => `• ${t.name} | Room ${t.room} | Rent ₹${t.rent || 0} | Due ₹${t.due || 0} | ${t.status}${t.vacating ? ' | VACATING ' + (t.vacatingDate || 'soon') : ''}`).join('\n') || 'No tenants yet.'}
 
 === ROOMS ===
-${state.rooms.map(r=>`• Room ${r.roomNumber} | ${r.type} | Capacity ${r.capacity||0} | Rent ₹${r.rent||0}`).join('\n') || 'No rooms yet.'}
+${state.rooms.map(r => `• Room ${r.roomNumber} | ${r.type} | Capacity ${r.capacity || 0} | Rent ₹${r.rent || 0}`).join('\n') || 'No rooms yet.'}
 
 === OPEN COMPLAINTS ===
-${state.complaints.filter(c=>c.status!=='Resolved').map(c=>`• Room ${c.room} | ${c.issue} | ${c.severity}`).join('\n') || 'No open complaints.'}`;
+${state.complaints.filter(c => c.status !== 'Resolved').map(c => `• Room ${c.room} | ${c.issue} | ${c.severity}`).join('\n') || 'No open complaints.'}`;
 }
 
 // ── Smart local AI engine — reads live PG data, no API key needed ──
 let aiChatHistory = [];
 
 function smartAIAnswer(query) {
-    const q   = query.toLowerCase();
+    const q = query.toLowerCase();
     const now = new Date();
     const pgName = state.settings.pgName || 'your PG';
 
     // ── helpers ──
-    const fmt  = n  => '₹' + (n || 0).toLocaleString('en-IN');
-    const pct  = (a, b) => b > 0 ? Math.round((a / b) * 100) + '%' : '0%';
+    const fmt = n => '₹' + (n || 0).toLocaleString('en-IN');
+    const pct = (a, b) => b > 0 ? Math.round((a / b) * 100) + '%' : '0%';
     const list = (arr, fn) => arr.length ? arr.map(fn).join('\n') : null;
 
-    const totalRent      = state.tenants.reduce((s, t) => s + (t.rent || 0), 0);
-    const totalDue       = state.tenants.reduce((s, t) => s + (t.due  || 0), 0);
+    const totalRent = state.tenants.reduce((s, t) => s + (t.rent || 0), 0);
+    const totalDue = state.tenants.reduce((s, t) => s + (t.due || 0), 0);
     const totalCollected = totalRent - totalDue;
-    const totalBeds      = state.rooms.reduce((s, r) => s + (r.capacity || 0), 0);
-    const unpaid         = state.tenants.filter(t => (t.due || 0) > 0);
-    const paid           = state.tenants.filter(t => (t.due || 0) <= 0 && t.status === 'Paid');
-    const vacating       = state.tenants.filter(t => t.vacating);
+    const totalBeds = state.rooms.reduce((s, r) => s + (r.capacity || 0), 0);
+    const unpaid = state.tenants.filter(t => (t.due || 0) > 0);
+    const paid = state.tenants.filter(t => (t.due || 0) <= 0 && t.status === 'Paid');
+    const vacating = state.tenants.filter(t => t.vacating);
     const openComplaints = state.complaints.filter(c => c.status !== 'Resolved');
-    const vacantBeds     = Math.max(0, totalBeds - state.tenants.length);
-    const vacantRooms    = state.rooms.filter(r => {
+    const vacantBeds = Math.max(0, totalBeds - state.tenants.length);
+    const vacantRooms = state.rooms.filter(r => {
         const occ = state.tenants.filter(t => t.room === r.roomNumber).length;
         return occ < (r.capacity || 0);
     });
@@ -2262,7 +2228,7 @@ function smartAIAnswer(query) {
 
     // ── COLLECTION / REVENUE ──
     if (q.match(/collect|revenue|income|total.*month|month.*total|how much.*collect/)) {
-        return `💰 *${now.toLocaleString('en-IN', {month:'long'})} Collection Summary*\n\n` +
+        return `💰 *${now.toLocaleString('en-IN', { month: 'long' })} Collection Summary*\n\n` +
             `• Expected: *${fmt(totalRent)}*\n` +
             `• Collected: *${fmt(totalCollected)}*\n` +
             `• Pending: *${fmt(totalDue)}*\n` +
@@ -2310,15 +2276,15 @@ function smartAIAnswer(query) {
 
     // ── HIGHEST / LOWEST RENT ──
     if (q.match(/highest|most.*rent|expensive|top rent/)) {
-        const sorted = [...state.tenants].sort((a, b) => (b.rent||0) - (a.rent||0));
+        const sorted = [...state.tenants].sort((a, b) => (b.rent || 0) - (a.rent || 0));
         if (!sorted.length) return 'No tenants found.';
         const top = sorted[0];
         return `🏆 *Highest rent tenant:*\n\n• *${top.name}* (Room ${top.room}) pays *${fmt(top.rent)}/month*\n\nTop 3:\n` +
-            sorted.slice(0,3).map((t,i) => `${i+1}. ${t.name} — ${fmt(t.rent)}`).join('\n');
+            sorted.slice(0, 3).map((t, i) => `${i + 1}. ${t.name} — ${fmt(t.rent)}`).join('\n');
     }
 
     if (q.match(/lowest|least.*rent|cheapest/)) {
-        const sorted = [...state.tenants].sort((a, b) => (a.rent||0) - (b.rent||0));
+        const sorted = [...state.tenants].sort((a, b) => (a.rent || 0) - (b.rent || 0));
         if (!sorted.length) return 'No tenants found.';
         const bot = sorted[0];
         return `• *${bot.name}* (Room ${bot.room}) pays the lowest rent: *${fmt(bot.rent)}/month*`;
@@ -2402,7 +2368,7 @@ function sendChatbotMessage() {
 function toggleThemeMode() {
     const currentTheme = document.documentElement.getAttribute('data-theme');
     const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-    
+
     document.documentElement.setAttribute('data-theme', newTheme);
     state.settings.theme = newTheme;
     saveData('settings');
@@ -2412,9 +2378,9 @@ function toggleThemeMode() {
         themeIcon.setAttribute("data-lucide", newTheme === 'light' ? "moon" : "sun");
         if (window.lucide) lucide.createIcons();
     }
-    
+
     showToast(`Theme switched to ${newTheme.toUpperCase()}`, "info");
-    
+
     // Refresh charts to match colors
     const stats = calculateStats();
     renderAnalyticsCharts(stats);
@@ -2424,7 +2390,7 @@ function changeAccentColor(colorName) {
     document.documentElement.setAttribute('data-accent', colorName);
     state.settings.accentColor = colorName;
     saveData('settings');
-    
+
     showToast(`Accent color updated to ${colorName.toUpperCase()}`, "success");
 
     // Redraw charts with new accent colors
@@ -2494,7 +2460,7 @@ function showToast(message, type = 'success') {
 
     const toast = document.createElement("div");
     toast.className = `toast toast-${type}`;
-    
+
     let iconName = "check-circle";
     if (type === 'error') iconName = "x-circle";
     else if (type === 'warning') iconName = "alert-triangle";
@@ -2504,7 +2470,7 @@ function showToast(message, type = 'success') {
         <i class="toast-icon" data-lucide="${iconName}"></i>
         <span class="toast-message">${message}</span>
     `;
-    
+
     container.appendChild(toast);
     if (window.lucide) lucide.createIcons();
 
@@ -2531,13 +2497,13 @@ function applySettings() {
     // Apply PG Name and Tagline to sidebar logo and document title
     const brandNameEl = document.getElementById("sidebar-brand-name");
     const brandTaglineEl = document.getElementById("sidebar-brand-tagline");
-    
+
     const pgName = state.settings.pgName || "PGSmart Rental Application";
     const tagline = state.settings.tagline || "Smart Living. Smart Management.";
 
     if (brandNameEl) brandNameEl.innerHTML = pgName + `<span>.</span>`;
     if (brandTaglineEl) brandTaglineEl.innerText = tagline;
-    
+
     // Also update document title
     document.title = `${pgName} - PG Rental Management System`;
 }
@@ -2581,7 +2547,7 @@ function clearSettingsScanner() {
     const previewBox = document.getElementById("settings-scanner-preview-box");
     const filenameLabel = document.getElementById("settings-scanner-filename");
     const fileInput = document.getElementById("form-settings-scanner");
-    
+
     if (previewBox) previewBox.style.display = "none";
     if (filenameLabel) filenameLabel.innerText = "No image uploaded";
     if (fileInput) fileInput.value = ""; // reset file input element
@@ -2661,18 +2627,13 @@ function closeAuthModal() {
 }
 
 function checkAuth() {
-    const btnTrigger  = document.getElementById("btn-auth-trigger");
-    const nameEl      = document.getElementById("sidebar-admin-name");
-    const roleEl      = document.getElementById("sidebar-admin-role");
-    const btnLogout   = document.getElementById("btn-logout");
-    const navUsers    = document.getElementById("nav-users");
-    const acctControl = document.getElementById("header-account-control");
     const btnTrigger = document.getElementById("btn-auth-trigger");
     const nameEl = document.getElementById("sidebar-admin-name");
     const roleEl = document.getElementById("sidebar-admin-role");
     const btnLogout = document.getElementById("btn-logout");
     const navUsers = document.getElementById("nav-users");
-    
+    const acctControl = document.getElementById("header-account-control");
+
     if (currentUser) {
         // Logged in user
         if (btnTrigger) btnTrigger.style.display = "none";
@@ -2680,7 +2641,7 @@ function checkAuth() {
         if (nameEl) nameEl.innerText = currentUser.fullname;
         if (roleEl) roleEl.innerText = currentUser.role || "Property Manager";
         if (btnLogout) btnLogout.style.display = "flex";
-        
+
         // Show users tab only to Super Admins
         if (navUsers) {
             navUsers.style.display = currentUser.role === "Super Admin" ? "flex" : "none";
@@ -2737,11 +2698,11 @@ async function handleLogin(e) {
     }
 
     const matchedUser = usersList.find(u => u.username.toLowerCase() === userVal.toLowerCase() && u.password === passVal);
-    
+
     if (matchedUser) {
         currentUser = matchedUser;
         sessionStorage.setItem('pgsmart_current_user', JSON.stringify(currentUser));
-        
+
         // Handle Remember Me credentials saving
         if (remember) {
             localStorage.setItem('pgsmart_remember_me', 'true');
@@ -2761,7 +2722,7 @@ async function handleLogin(e) {
             localStorage.setItem('pgsmart_users', JSON.stringify(usersList));
             if (firebaseDb) firebaseDb.ref('users').set(usersList).catch(console.warn);
         }
-        
+
         // Re-initialize database to load user's partitioned data
         await initDatabase();
         checkMonthlyRentCycle();
@@ -2774,7 +2735,7 @@ async function handleLogin(e) {
         if (!remember) {
             document.getElementById("login-form").reset();
         }
-        
+
         // Refresh display views
         switchView('dashboard');
     } else {
@@ -2806,13 +2767,13 @@ function handleSignup(e) {
     if (firebaseDb) {
         firebaseDb.ref('users').set(usersList).catch(e => console.error("Firebase sync user error:", e));
     }
-    
+
     // Seed new user partition with empty data (for a fresh screen)
     const userRoomsKey = `pgsmart_user_${username.toLowerCase()}_rooms`;
     const userTenantsKey = `pgsmart_user_${username.toLowerCase()}_tenants`;
     const userComplaintsKey = `pgsmart_user_${username.toLowerCase()}_complaints`;
     const userSettingsKey = `pgsmart_user_${username.toLowerCase()}_settings`;
-    
+
     localStorage.setItem(userRoomsKey, JSON.stringify([]));
     localStorage.setItem(userTenantsKey, JSON.stringify([]));
     localStorage.setItem(userComplaintsKey, JSON.stringify([]));
@@ -2867,7 +2828,7 @@ function logAudit(action, details) {
 function renderAuditLog() {
     const tbody = document.getElementById('audit-table-rows');
     if (!tbody) return;
-    const filterUser   = (document.getElementById('audit-filter-user')   || {}).value || '';
+    const filterUser = (document.getElementById('audit-filter-user') || {}).value || '';
     const filterAction = (document.getElementById('audit-filter-action') || {}).value || '';
     const log = JSON.parse(localStorage.getItem('pgsmart_audit') || '[]');
 
@@ -2882,7 +2843,7 @@ function renderAuditLog() {
     }
 
     const filtered = log.filter(e =>
-        (!filterUser   || e.user   === filterUser) &&
+        (!filterUser || e.user === filterUser) &&
         (!filterAction || e.action === filterAction)
     );
 
@@ -2893,8 +2854,8 @@ function renderAuditLog() {
 
     tbody.innerHTML = filtered.map(e => {
         const t = new Date(e.time);
-        const timeStr = t.toLocaleDateString('en-IN') + ' ' + t.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'});
-        const colors = { ADD:'#10b981', EDIT:'#f59e0b', DELETE:'#ef4444', LOGIN:'#3b82f6', LOGOUT:'#8b5cf6' };
+        const timeStr = t.toLocaleDateString('en-IN') + ' ' + t.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const colors = { ADD: '#10b981', EDIT: '#f59e0b', DELETE: '#ef4444', LOGIN: '#3b82f6', LOGOUT: '#8b5cf6' };
         const color = colors[e.action] || 'var(--text-secondary)';
         return `<tr class="table-row-item">
             <td style="font-size:0.8rem;color:var(--text-secondary);">${timeStr}</td>
@@ -2936,7 +2897,7 @@ function renderUsers() {
         tr.className = "table-row-item";
         const initials = user.fullname.split(" ").map(w => w[0]).join("").toUpperCase();
         const isSelf = currentUser && user.username.toLowerCase() === currentUser.username.toLowerCase();
-        const lastLogin = user.lastLogin ? new Date(user.lastLogin).toLocaleString('en-IN', {dateStyle:'short', timeStyle:'short'}) : '—';
+        const lastLogin = user.lastLogin ? new Date(user.lastLogin).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '—';
         tr.innerHTML = `
             <td><div class="user-cell">
                 <span class="user-avatar">${initials}</span>
@@ -2963,12 +2924,12 @@ async function viewOwnerDetails(username, fullname) {
     document.getElementById('owner-modal').classList.add('active');
 
     // Reset to loading state
-    document.getElementById('om-tenants').textContent   = '…';
-    document.getElementById('om-rooms').textContent     = '…';
+    document.getElementById('om-tenants').textContent = '…';
+    document.getElementById('om-rooms').textContent = '…';
     document.getElementById('om-collected').textContent = '…';
-    document.getElementById('om-dues').textContent      = '…';
+    document.getElementById('om-dues').textContent = '…';
     document.getElementById('om-tenant-rows').innerHTML = '<tr><td colspan="7" class="table-empty-row">Loading...</td></tr>';
-    document.getElementById('om-room-rows').innerHTML   = '<tr><td colspan="6" class="table-empty-row">Loading...</td></tr>';
+    document.getElementById('om-room-rows').innerHTML = '<tr><td colspan="6" class="table-empty-row">Loading...</td></tr>';
 
     if (!firebaseDb) {
         showToast('Firebase not connected.', 'error');
@@ -2980,16 +2941,16 @@ async function viewOwnerDetails(username, fullname) {
         const snap = await firebaseDb.ref(basePath).once('value');
         const data = snap.val() || {};
 
-        const tenants    = Object.values(data.tenants    || {});
-        const rooms      = Object.values(data.rooms      || {});
-        const totalPaid  = tenants.reduce((s, t) => s + (t.paid  || 0), 0);
-        const totalDues  = tenants.reduce((s, t) => s + (t.due   || 0), 0);
+        const tenants = Object.values(data.tenants || {});
+        const rooms = Object.values(data.rooms || {});
+        const totalPaid = tenants.reduce((s, t) => s + (t.paid || 0), 0);
+        const totalDues = tenants.reduce((s, t) => s + (t.due || 0), 0);
 
         // Update summary cards
-        document.getElementById('om-tenants').textContent   = tenants.length;
-        document.getElementById('om-rooms').textContent     = rooms.length;
+        document.getElementById('om-tenants').textContent = tenants.length;
+        document.getElementById('om-rooms').textContent = rooms.length;
         document.getElementById('om-collected').textContent = '₹' + totalPaid.toLocaleString('en-IN');
-        document.getElementById('om-dues').textContent      = '₹' + totalDues.toLocaleString('en-IN');
+        document.getElementById('om-dues').textContent = '₹' + totalDues.toLocaleString('en-IN');
 
         // Render tenants table
         const tbody = document.getElementById('om-tenant-rows');
@@ -2997,7 +2958,7 @@ async function viewOwnerDetails(username, fullname) {
             tbody.innerHTML = '<tr><td colspan="7" class="table-empty-row">No tenants found for this user.</td></tr>';
         } else {
             tbody.innerHTML = tenants.map(t => {
-                const due  = t.due  || 0;
+                const due = t.due || 0;
                 const paid = t.paid || 0;
                 const rent = t.rent || 0;
                 const badge = due <= 0
@@ -3021,9 +2982,9 @@ async function viewOwnerDetails(username, fullname) {
             rbody.innerHTML = '<tr><td colspan="6" class="table-empty-row">No rooms found for this user.</td></tr>';
         } else {
             rbody.innerHTML = rooms.map(r => {
-                const total    = r.totalBeds    || 0;
+                const total = r.totalBeds || 0;
                 const occupied = r.occupiedBeds || 0;
-                const vacant   = total - occupied;
+                const vacant = total - occupied;
                 const badge = vacant > 0
                     ? '<span class="status-badge badge-pending">Has Vacancy</span>'
                     : '<span class="status-badge badge-paid">Full</span>';
@@ -3055,7 +3016,7 @@ function openUserModal(index = null) {
     document.getElementById('user-modal-fullname').value = index !== null ? usersList[index].fullname : '';
     document.getElementById('user-modal-username').value = index !== null ? usersList[index].username : '';
     document.getElementById('user-modal-password').value = index !== null ? usersList[index].password : '';
-    document.getElementById('user-modal-role').value     = index !== null ? usersList[index].role     : 'Admin';
+    document.getElementById('user-modal-role').value = index !== null ? usersList[index].role : 'Admin';
     document.getElementById('user-modal-title').textContent = index !== null ? 'Edit User' : 'Add New User';
     document.getElementById('user-modal').classList.add('active');
 }
@@ -3065,11 +3026,11 @@ function closeUserModal() {
 }
 
 async function saveUser() {
-    const index    = document.getElementById('user-modal-index').value;
+    const index = document.getElementById('user-modal-index').value;
     const fullname = document.getElementById('user-modal-fullname').value.trim();
     const username = document.getElementById('user-modal-username').value.trim();
     const password = document.getElementById('user-modal-password').value.trim();
-    const role     = document.getElementById('user-modal-role').value;
+    const role = document.getElementById('user-modal-role').value;
     if (!fullname || !username || !password) { showToast('Please fill in all fields.', 'error'); return; }
     const duplicate = usersList.find((u, i) => u.username.toLowerCase() === username.toLowerCase() && i !== Number(index));
     if (duplicate) { showToast('Username already exists.', 'error'); return; }
@@ -3115,8 +3076,8 @@ function resetUserPassword(index) {
 // SUPER ADMIN — ANNOUNCEMENTS
 // ============================================================
 function postAnnouncement() {
-    const title    = document.getElementById('announce-title').value.trim();
-    const body     = document.getElementById('announce-body').value.trim();
+    const title = document.getElementById('announce-title').value.trim();
+    const body = document.getElementById('announce-body').value.trim();
     const priority = document.getElementById('announce-priority').value;
     if (!title || !body) { showToast('Fill in both title and message.', 'error'); return; }
     const list = JSON.parse(localStorage.getItem('pgsmart_announcements') || '[]');
@@ -3126,7 +3087,7 @@ function postAnnouncement() {
     if (firebaseDb) firebaseDb.ref('announcements').set(list).catch(console.warn);
     logAudit('ADD', `Posted announcement: "${title}"`);
     document.getElementById('announce-title').value = '';
-    document.getElementById('announce-body').value  = '';
+    document.getElementById('announce-body').value = '';
     showToast('Announcement posted!', 'success');
     renderAnnouncements();
     showAnnouncementBanner();
@@ -3137,7 +3098,7 @@ function renderAnnouncements() {
     if (!container) return;
     const list = JSON.parse(localStorage.getItem('pgsmart_announcements') || '[]');
     if (list.length === 0) { container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">No announcements yet.</div>'; return; }
-    const colors = { info:'#3b82f6', warning:'#f59e0b', urgent:'#ef4444' };
+    const colors = { info: '#3b82f6', warning: '#f59e0b', urgent: '#ef4444' };
     container.innerHTML = list.map(a => `
         <div class="stat-card" style="padding:16px;border-left:4px solid ${colors[a.priority] || '#3b82f6'};">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;">
@@ -3167,7 +3128,7 @@ function showAnnouncementBanner() {
     const banner = document.getElementById('announce-banner');
     if (!banner || list.length === 0) return;
     const latest = list[0];
-    const colors = { info:'#3b82f6', warning:'#f59e0b', urgent:'#ef4444' };
+    const colors = { info: '#3b82f6', warning: '#f59e0b', urgent: '#ef4444' };
     banner.style.background = colors[latest.priority] || '#3b82f6';
     banner.style.color = '#fff';
     banner.style.display = 'block';
@@ -3185,9 +3146,9 @@ function renderFinancials() {
     tbody.innerHTML = state.tenants.map(t => {
         const rent = t.rent || 0;
         const paid = t.paid || 0;
-        const due  = t.due  || 0;
+        const due = t.due || 0;
         totalRevenue += paid;
-        pendingDues  += due;
+        pendingDues += due;
         const joinDate = t.joinDate ? new Date(t.joinDate) : null;
         if (joinDate && joinDate.getMonth() === now.getMonth() && joinDate.getFullYear() === now.getFullYear()) {
             monthRevenue += paid;
@@ -3207,20 +3168,20 @@ function renderFinancials() {
     const occupancy = stats.totalBeds > 0 ? Math.round((stats.occupiedBeds / stats.totalBeds) * 100) : 0;
     document.getElementById('fin-total-revenue').textContent = '₹' + totalRevenue.toLocaleString('en-IN');
     document.getElementById('fin-month-revenue').textContent = '₹' + monthRevenue.toLocaleString('en-IN');
-    document.getElementById('fin-pending-dues').textContent  = '₹' + pendingDues.toLocaleString('en-IN');
-    document.getElementById('fin-occupancy').textContent     = occupancy + '%';
+    document.getElementById('fin-pending-dues').textContent = '₹' + pendingDues.toLocaleString('en-IN');
+    document.getElementById('fin-occupancy').textContent = occupancy + '%';
 }
 
 function exportFinancialsCSV() {
     const rows = ['Tenant,Room,Rent,Paid,Due,Status',
-        ...state.tenants.map(t => `"${t.name}","${t.room || ''}",${t.rent||0},${t.paid||0},${t.due||0},"${t.due > 0 ? 'Pending' : 'Paid'}"`)
+        ...state.tenants.map(t => `"${t.name}","${t.room || ''}",${t.rent || 0},${t.paid || 0},${t.due || 0},"${t.due > 0 ? 'Pending' : 'Paid'}"`)
     ].join('\n');
     downloadCSV(rows, 'financials.csv');
     logAudit('EXPORT', 'Exported financials as CSV');
 }
 
 function exportAllDataCSV() {
-    const tenants = state.tenants.map(t => `"${t.name}","${t.room||''}",${t.rent||0},${t.paid||0},${t.due||0}`).join('\n');
+    const tenants = state.tenants.map(t => `"${t.name}","${t.room || ''}",${t.rent || 0},${t.paid || 0},${t.due || 0}`).join('\n');
     const csv = 'Name,Room,Rent,Paid,Due\n' + tenants;
     downloadCSV(csv, 'pgsmart_all_data.csv');
     logAudit('EXPORT', 'Exported all app data as CSV');
@@ -3239,12 +3200,12 @@ function downloadCSV(csv, filename) {
 // ============================================================
 function loadSuperAdminSettings() {
     const s = JSON.parse(localStorage.getItem('pgsmart_sa_settings') || '{}');
-    if (document.getElementById('sa-pg-name'))    document.getElementById('sa-pg-name').value    = s.pgName    || '';
-    if (document.getElementById('sa-pg-phone'))   document.getElementById('sa-pg-phone').value   = s.pgPhone   || '';
+    if (document.getElementById('sa-pg-name')) document.getElementById('sa-pg-name').value = s.pgName || '';
+    if (document.getElementById('sa-pg-phone')) document.getElementById('sa-pg-phone').value = s.pgPhone || '';
     if (document.getElementById('sa-pg-address')) document.getElementById('sa-pg-address').value = s.pgAddress || '';
-    if (document.getElementById('sa-due-day'))    document.getElementById('sa-due-day').value    = s.dueDay    || 5;
-    if (document.getElementById('sa-late-fee'))   document.getElementById('sa-late-fee').value   = s.lateFee   || 100;
-    if (document.getElementById('sa-grace'))      document.getElementById('sa-grace').value      = s.grace     || 2;
+    if (document.getElementById('sa-due-day')) document.getElementById('sa-due-day').value = s.dueDay || 5;
+    if (document.getElementById('sa-late-fee')) document.getElementById('sa-late-fee').value = s.lateFee || 100;
+    if (document.getElementById('sa-grace')) document.getElementById('sa-grace').value = s.grace || 2;
     const maint = document.getElementById('sa-maintenance');
     const slider = document.getElementById('maintenance-slider');
     if (maint) maint.checked = s.maintenance || false;
@@ -3253,8 +3214,8 @@ function loadSuperAdminSettings() {
 
 function savePGInfo() {
     const s = JSON.parse(localStorage.getItem('pgsmart_sa_settings') || '{}');
-    s.pgName    = document.getElementById('sa-pg-name').value.trim();
-    s.pgPhone   = document.getElementById('sa-pg-phone').value.trim();
+    s.pgName = document.getElementById('sa-pg-name').value.trim();
+    s.pgPhone = document.getElementById('sa-pg-phone').value.trim();
     s.pgAddress = document.getElementById('sa-pg-address').value.trim();
     localStorage.setItem('pgsmart_sa_settings', JSON.stringify(s));
     if (firebaseDb) firebaseDb.ref('sa_settings').set(s).catch(console.warn);
@@ -3264,9 +3225,9 @@ function savePGInfo() {
 
 function saveLateFeeRules() {
     const s = JSON.parse(localStorage.getItem('pgsmart_sa_settings') || '{}');
-    s.dueDay  = parseInt(document.getElementById('sa-due-day').value)  || 5;
+    s.dueDay = parseInt(document.getElementById('sa-due-day').value) || 5;
     s.lateFee = parseInt(document.getElementById('sa-late-fee').value) || 100;
-    s.grace   = parseInt(document.getElementById('sa-grace').value)    || 2;
+    s.grace = parseInt(document.getElementById('sa-grace').value) || 2;
     localStorage.setItem('pgsmart_sa_settings', JSON.stringify(s));
     if (firebaseDb) firebaseDb.ref('sa_settings').set(s).catch(console.warn);
     logAudit('EDIT', `Updated late fee rules: ₹${s.lateFee}/day after day ${s.dueDay}`);
@@ -3276,9 +3237,9 @@ function saveLateFeeRules() {
 function changeOwnPassword() {
     const np = document.getElementById('sa-new-password').value.trim();
     const cp = document.getElementById('sa-confirm-password').value.trim();
-    if (!np || !cp)       { showToast('Please fill both fields.', 'error'); return; }
-    if (np !== cp)        { showToast('Passwords do not match.', 'error'); return; }
-    if (np.length < 6)    { showToast('Password must be at least 6 characters.', 'error'); return; }
+    if (!np || !cp) { showToast('Please fill both fields.', 'error'); return; }
+    if (np !== cp) { showToast('Passwords do not match.', 'error'); return; }
+    if (np.length < 6) { showToast('Password must be at least 6 characters.', 'error'); return; }
     const idx = usersList.findIndex(u => u.username.toLowerCase() === currentUser.username.toLowerCase());
     if (idx === -1) { showToast('User not found.', 'error'); return; }
     usersList[idx].password = np;
@@ -3306,8 +3267,8 @@ function toggleMaintenanceMode(on) {
 function clearAllData() {
     if (!confirm('⚠️ This will delete ALL tenants, rooms and complaints. Are you sure?')) return;
     if (!confirm('This is PERMANENT. Type OK to confirm.')) return;
-    state.tenants    = [];
-    state.rooms      = [];
+    state.tenants = [];
+    state.rooms = [];
     state.complaints = [];
     saveData('all');
     logAudit('DELETE', 'Cleared all app data');
@@ -3340,12 +3301,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             const file = e.target.files[0];
             if (file) {
                 const reader = new FileReader();
-                reader.onload = function(evt) {
+                reader.onload = function (evt) {
                     tempScannerBase64 = evt.target.result;
                     const previewBox = document.getElementById("settings-scanner-preview-box");
                     const previewImg = document.getElementById("settings-scanner-preview");
                     const filenameLabel = document.getElementById("settings-scanner-filename");
-                    
+
                     if (previewImg) previewImg.src = tempScannerBase64;
                     if (previewBox) previewBox.style.display = "flex";
                     if (filenameLabel) filenameLabel.innerText = file.name;
@@ -3477,8 +3438,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 // Safety net: force dismiss preloader after 3 seconds no matter what
-window.addEventListener('load', function() {
-    setTimeout(function() {
+window.addEventListener('load', function () {
+    setTimeout(function () {
         const preloader = document.getElementById('preloader');
         if (preloader && preloader.style.display !== 'none') {
             preloader.classList.add('fade-out');
