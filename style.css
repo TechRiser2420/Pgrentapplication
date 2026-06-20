@@ -1981,3 +1981,202 @@ main {
     color: #070913 !important;
     box-shadow: 0 0 10px var(--accent-glow);
 }
+
+/* ----------------------------------------------------
+ * MOBILE SIDEBAR BACKDROP (tap outside to close drawer)
+ * ---------------------------------------------------- */
+#sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 99; /* below sidebar (z-index 100), above page content */
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+#sidebar-backdrop.active {
+    display: block;
+    opacity: 1;
+}
+
+/* ----------------------------------------------------
+ * RESPONSIVE OVERHAUL — TABLETS & LARGE PHONES (≤900px)
+ * Builds on the existing 900px breakpoint above
+ * ---------------------------------------------------- */
+@media (max-width: 900px) {
+    /* Header: title + controls wrap instead of overflowing */
+    .main-header {
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+
+    #main-header-title {
+        font-size: 1.5rem;
+    }
+
+    .header-controls {
+        flex-wrap: wrap;
+        gap: 8px;
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    /* Account control pill shrinks gracefully */
+    #header-account-control span.admin-name {
+        max-width: 90px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: inline-block;
+    }
+
+    /* Modals fit narrow screens with breathing room */
+    .modal-content-box {
+        max-width: calc(100% - 32px);
+        margin: 0 16px;
+        padding: 22px;
+        max-height: 85vh;
+        overflow-y: auto;
+    }
+
+    /* Tables: tighter padding so more columns fit before scrolling */
+    .custom-glass-table th,
+    .custom-glass-table td {
+        padding: 12px 14px;
+        font-size: 0.82rem;
+    }
+
+    /* Stat card text scales down slightly */
+    .stat-card-value {
+        font-size: 1.5rem;
+    }
+}
+
+/* ----------------------------------------------------
+ * RESPONSIVE OVERHAUL — SMALL PHONES (≤600px)
+ * Builds on the existing 600px breakpoint above
+ * ---------------------------------------------------- */
+@media (max-width: 600px) {
+    main {
+        padding: 14px;
+    }
+
+    #main-header-title {
+        font-size: 1.3rem;
+    }
+
+    /* Hide secondary header buttons' text labels if any creep in; keep icons only */
+    .header-btn {
+        width: 36px;
+        height: 36px;
+    }
+
+    /* Account control: drop role label, keep name + avatar + logout compact */
+    #header-account-control {
+        padding: 4px 8px 4px 4px !important;
+        gap: 6px !important;
+    }
+
+    #header-account-control .admin-role {
+        display: none;
+    }
+
+    #header-account-control img.admin-avatar {
+        width: 28px !important;
+        height: 28px !important;
+    }
+
+    /* Sign in button shrinks to icon-first compact pill */
+    #btn-auth-trigger {
+        padding: 0 12px !important;
+        font-size: 0.78rem !important;
+    }
+
+    /* Tables: stack-friendly horizontal scroll with visible scrollbar hint */
+    .table-responsive-wrapper {
+        border-radius: 14px;
+        margin-bottom: 18px;
+    }
+
+    .custom-glass-table th,
+    .custom-glass-table td {
+        padding: 10px 12px;
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
+
+    /* Modal padding tightens further; full-bleed on very small screens */
+    .modal-content-box {
+        max-width: calc(100% - 20px);
+        margin: 0 10px;
+        padding: 18px;
+        border-radius: 16px;
+    }
+
+    .modal-title {
+        font-size: 1.1rem;
+    }
+
+    /* Stat cards: single column already applied at 600px above — tighten padding */
+    .stat-card {
+        padding: 16px;
+    }
+
+    .stat-card-value {
+        font-size: 1.3rem;
+    }
+
+    /* Action buttons inside filter bars become full-width and stack cleanly
+       (scoped to filter bars only — does NOT affect header sign-in button
+       or modal Cancel/Save button pairs, which must stay inline) */
+    .action-filter-bar .btn-primary-neon,
+    .action-filter-bar .btn-secondary-neon {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .action-filter-bar > div {
+        width: 100%;
+    }
+
+    /* Owner detail modal summary cards collapse to 2 columns on phones */
+    #owner-modal .modal-content-box > div[style*="grid-template-columns:repeat(4,1fr)"],
+    #owner-modal .modal-content-box > div[style*="grid-template-columns: repeat(4, 1fr)"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+
+    /* Super admin settings grid collapses to single column */
+    #view-superadmin > div[style*="grid-template-columns:1fr 1fr"],
+    #view-superadmin > div[style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Brand logo in sidebar shrinks slightly to fit narrow drawer */
+    .brand-logo {
+        font-size: 1.2rem;
+    }
+}
+
+/* ----------------------------------------------------
+ * RESPONSIVE OVERHAUL — VERY SMALL PHONES (≤400px)
+ * ---------------------------------------------------- */
+@media (max-width: 400px) {
+    #header-account-control .admin-name {
+        max-width: 60px;
+    }
+
+    #btn-auth-trigger span,
+    #btn-auth-trigger {
+        font-size: 0.72rem !important;
+    }
+
+    .stats-grid {
+        gap: 12px;
+    }
+
+    .stat-card {
+        padding: 12px;
+    }
+}
