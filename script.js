@@ -426,7 +426,114 @@ function checkMonthlyRentCycle() {
 }
 
 // ----------------------------------------------------
-// CORE CALCULATIONS AND STATS
+// BROWSER-BASED RENT OVERDUE REMINDER
+// Fires on day 11, 16, 21, 26 of the month
+// Tracks last shown date in localStorage to avoid
+// spamming on every page refresh
+// ----------------------------------------------------
+function checkRentReminder() {
+    // Only run when someone is logged in
+    if (!currentUser) return;
+
+    const now      = new Date();
+    const day      = now.getDate();
+    const month    = now.getMonth() + 1;
+    const year     = now.getFullYear();
+
+    // Reminder fires on day 11, 16, 21, 26 (every 5 days after 10th)
+    const reminderDays = [11, 16, 21, 26];
+    const isReminderDay = reminderDays.includes(day);
+    if (!isReminderDay) return;
+
+    // Check if we already showed reminder today (avoid re-showing on refresh)
+    const shownKey  = getDbKey(`rent_reminder_shown`);
+    const todayStr  = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const lastShown = localStorage.getItem(shownKey);
+    if (lastShown === todayStr) return;
+
+    // Find all overdue / unpaid tenants
+    const overdueTenants = state.tenants.filter(t =>
+        t.status === 'Overdue' || (t.status === 'Pending' && (t.due || 0) > 0)
+    );
+    if (overdueTenants.length === 0) return;
+
+    // Mark as shown today
+    localStorage.setItem(shownKey, todayStr);
+
+    // Calculate next reminder date
+    const nextDay      = reminderDays.find(d => d > day) || 11;
+    const nextMonth    = nextDay === 11 && day >= 26 ? month + 1 : month;
+    const nextDate     = new Date(year, nextMonth - 1, nextDay);
+    const nextDateStr  = nextDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long' });
+
+    // Build the banner content
+    const pgName   = state.settings.pgName || 'PGSmart';
+    const monthName = now.toLocaleString('en-IN', { month: 'long' });
+    const dateStr   = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    document.getElementById('rent-reminder-title').textContent =
+        `⚠️  ${overdueTenants.length} tenant${overdueTenants.length > 1 ? 's have' : ' has'} not paid rent — ${monthName} ${year}`;
+    document.getElementById('rent-reminder-next-date').textContent = nextDateStr;
+
+    const listEl = document.getElementById('rent-reminder-list');
+    listEl.innerHTML = overdueTenants.map(t => {
+        const due  = t.due || 0;
+        const phone = (t.phone || '').replace(/[^0-9]/g, '');
+        const formattedPhone = phone.length === 10 ? '91' + phone : phone;
+
+        const message =
+`🏠 *${pgName}*
+⚠️ *Rent Due Reminder — ${monthName} ${year}*
+━━━━━━━━━━━━━━━━━━━━
+👤 Tenant: *${t.name}*
+🚪 Room: *${t.room}*
+📅 Reminder Date: ${dateStr}
+━━━━━━━━━━━━━━━━━━━━
+💰 Monthly Rent: ₹${(t.rent||0).toLocaleString('en-IN')}
+⚠️ Amount Due: *₹${due.toLocaleString('en-IN')}*
+━━━━━━━━━━━━━━━━━━━━
+Your rent is overdue. Please pay at the earliest to avoid late fees. Thank you! 🙏`;
+
+        const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+
+        return `
+        <div style="background:rgba(254,202,202,0.12);border:1px solid rgba(254,202,202,0.25);border-radius:10px;padding:10px 14px;min-width:200px;flex:1;">
+            <div style="font-weight:700;font-size:0.88rem;margin-bottom:3px;">${t.name}</div>
+            <div style="font-size:0.78rem;opacity:0.8;margin-bottom:8px;">Room ${t.room} &nbsp;·&nbsp; Due: ₹${due.toLocaleString('en-IN')}</div>
+            <a href="${waUrl}" target="_blank"
+               onclick="logReminderSent('${t.name}')"
+               style="display:inline-flex;align-items:center;gap:6px;background:#25D366;color:#fff;text-decoration:none;padding:5px 12px;border-radius:7px;font-size:0.78rem;font-weight:600;">
+                <span>📲</span> Send WhatsApp
+            </a>
+        </div>`;
+    }).join('');
+
+    document.getElementById('rent-reminder-banner').style.display = 'block';
+
+    // Push page content down so banner doesn't overlap
+    const appLayout = document.getElementById('app-layout');
+    if (appLayout) appLayout.style.marginTop = '0';
+
+    logAuditIfAvailable(`Rent reminder shown for ${overdueTenants.length} overdue tenant(s) on day ${day}`);
+}
+
+function closeRentReminder() {
+    const banner = document.getElementById('rent-reminder-banner');
+    if (banner) banner.style.display = 'none';
+}
+
+function logReminderSent(tenantName) {
+    logAuditIfAvailable(`WhatsApp overdue reminder sent to ${tenantName}`);
+    showToast(`Reminder message drafted for ${tenantName}`, 'info');
+}
+
+// Safe wrapper — logAudit may not exist in all builds
+function logAuditIfAvailable(msg) {
+    if (typeof logAudit === 'function' && currentUser) {
+        logAudit('REMINDER', msg);
+    }
+}
+
 // ----------------------------------------------------
 function calculateStats() {
     const totalRooms = state.rooms.length;
@@ -1502,24 +1609,43 @@ function sendWhatsAppBill(tenantId) {
     const tenant = state.tenants.find(t => t.id === tenantId);
     if (!tenant) return;
 
-    const name   = tenant.name;
-    const room   = tenant.room;
-    const rent   = tenant.rent;
-    const due    = tenant.due || 0;
-    const phone  = tenant.phone;
-    const pgName = state.settings.pgName || "PGSmart Rental";
+    const name    = tenant.name;
+    const room    = tenant.room;
+    const rent    = tenant.rent;
+    const due     = tenant.due || 0;
+    const phone   = tenant.phone;
+    const pgName  = state.settings.pgName || "PGSmart Rental";
+    const upiId   = (state.settings.upiId || '').trim();
 
-    // Month / date info for the bill
     const now       = new Date();
     const monthName = now.toLocaleString('en-IN', { month: 'long' });
     const year      = now.getFullYear();
     const dateStr   = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
     const paidAmt   = Math.max(0, rent - due);
 
-    // 1. Generate a downloadable PDF bill for this tenant
-    generateTenantBillPDF(tenant, { pgName, monthName, year, dateStr, paidAmt, due });
+    // ── Build UPI deep-link ──
+    // If owner has set their UPI ID → pre-fill their account (one-tap pay)
+    // If no UPI ID set → show UPI app chooser (tenant picks GPay/PhonePe/Paytm)
+    let upiPayLine = '';
+    let upiDeepLink = '';
+    if (due > 0) {
+        const upiNote = encodeURIComponent(`Rent ${monthName} ${year} Room ${room}`);
+        const upiName = encodeURIComponent(pgName);
+        if (upiId) {
+            // Owner-specific: pre-fills their UPI ID + exact amount
+            upiDeepLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${upiName}&am=${due}&cu=INR&tn=${upiNote}`;
+            upiPayLine  = `\n💳 *Pay Now (${upiId}):*\n${upiDeepLink}`;
+        } else {
+            // No UPI ID: opens app chooser with amount pre-filled, tenant picks app
+            upiDeepLink = `upi://pay?am=${due}&cu=INR&tn=${upiNote}`;
+            upiPayLine  = `\n💳 *Pay ₹${due.toLocaleString('en-IN')} via UPI:*\n${upiDeepLink}`;
+        }
+    }
 
-    // 2. Build a rich WhatsApp message matching the PDF bill
+    // 1. Generate PDF bill (includes UPI link inside)
+    generateTenantBillPDF(tenant, { pgName, monthName, year, dateStr, paidAmt, due, upiId, upiDeepLink });
+
+    // 2. Build WhatsApp message with UPI link
     let message = "";
     if (due > 0) {
         message =
@@ -1533,8 +1659,9 @@ function sendWhatsAppBill(tenantId) {
 💰 Monthly Rent: ₹${rent.toLocaleString('en-IN')}
 ✅ Amount Paid: ₹${paidAmt.toLocaleString('en-IN')}
 ⚠️ Outstanding Due: *₹${due.toLocaleString('en-IN')}*
+━━━━━━━━━━━━━━━━━━━━${upiPayLine}
 ━━━━━━━━━━━━━━━━━━━━
-Please clear your dues at the earliest. A detailed bill PDF has been downloaded — please attach it here. Thank you! 🙏`;
+Tap the link above to pay instantly via GPay, PhonePe or any UPI app. Thank you! 🙏`;
     } else {
         message =
 `🏠 *${pgName}*
@@ -1548,21 +1675,17 @@ Please clear your dues at the earliest. A detailed bill PDF has been downloaded 
 ✅ Status: *FULLY PAID*
 ⚠️ Pending Dues: ₹0
 ━━━━━━━━━━━━━━━━━━━━
-Thank you for paying on time! A receipt PDF has been downloaded — please attach it here. 🙏`;
+Thank you for paying on time! 🙏`;
     }
 
-    // Format phone: if no international prefix, append default 91
     let formattedPhone = phone.replace(/[^0-9]/g, '');
-    if (formattedPhone.length === 10) {
-        formattedPhone = "91" + formattedPhone;
-    }
+    if (formattedPhone.length === 10) formattedPhone = "91" + formattedPhone;
 
     const waUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-    // Slight delay so the PDF download triggers before the WhatsApp tab opens
     setTimeout(() => window.open(waUrl, '_blank'), 600);
 
     addActivity(`WhatsApp bill sent to ${name} (${phone})`, 'message-square');
-    showToast(`Bill PDF downloaded & WhatsApp message drafted for ${name}`, "info");
+    showToast(`Bill PDF downloaded & WhatsApp drafted for ${name}`, "info");
 }
 
 // ----------------------------------------------------
@@ -1574,7 +1697,7 @@ function generateTenantBillPDF(tenant, ctx) {
         return;
     }
 
-    const { pgName, monthName, year, dateStr, paidAmt, due } = ctx;
+    const { pgName, monthName, year, dateStr, paidAmt, due, upiId, upiDeepLink } = ctx;
     const statusColor = due > 0 ? '#ef4444' : '#10b981';
     const statusLabel = due > 0 ? 'PENDING DUE' : 'FULLY PAID';
 
@@ -1604,23 +1727,61 @@ function generateTenantBillPDF(tenant, ctx) {
             <tr><td style="padding:10px 0;color:#475569;">Outstanding Due</td><td style="padding:10px 0;text-align:right;font-weight:700;color:${due > 0 ? '#ef4444' : '#0f172a'};">₹${due.toLocaleString('en-IN')}</td></tr>
         </table>
 
-        <div style="margin-top:24px;text-align:center;">
+        <div style="margin-top:20px;text-align:center;">
             <span style="display:inline-block;padding:8px 24px;border-radius:20px;background:${statusColor}15;color:${statusColor};font-weight:700;font-size:13px;letter-spacing:0.5px;">${statusLabel}</span>
         </div>
 
-        <p style="margin-top:30px;text-align:center;color:#94a3b8;font-size:11px;">Generated by ${pgName} • ${dateStr}</p>
+        ${due > 0 ? `
+        <div style="margin-top:20px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;display:flex;align-items:center;gap:20px;">
+            <div id="bill-qr-container" style="flex-shrink:0;"></div>
+            <div>
+                <div style="font-weight:700;color:#166534;font-size:13px;margin-bottom:6px;">💳 Scan to Pay via UPI</div>
+                ${upiId ? `<div style="font-size:12px;color:#166534;margin-bottom:4px;">UPI ID: <strong>${upiId}</strong></div>` : ''}
+                <div style="font-size:12px;color:#166534;margin-bottom:4px;">Amount: <strong>₹${due.toLocaleString('en-IN')}</strong></div>
+                <div style="font-size:11px;color:#4ade80;">Scan QR with GPay / PhonePe / Paytm<br>or tap link on mobile — amount pre-filled</div>
+            </div>
+        </div>` : ''}
+
+        <p style="margin-top:20px;text-align:center;color:#94a3b8;font-size:11px;">Generated by ${pgName} • ${dateStr}</p>
         </div>
     `;
 
-    const opt = {
-        margin: 0,
-        filename: `${pgName.replace(/[^a-zA-Z0-9]/g,'_')}_${tenant.name.replace(/[^a-zA-Z0-9]/g,'_')}_${monthName}_${year}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    // Generate QR code into the bill BEFORE converting to PDF
+    const generateAndSave = () => {
+        const opt = {
+            margin: 0,
+            filename: `${pgName.replace(/[^a-zA-Z0-9]/g,'_')}_${tenant.name.replace(/[^a-zA-Z0-9]/g,'_')}_${monthName}_${year}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        html2pdf().from(billArea).set(opt).save();
     };
 
-    html2pdf().from(billArea).set(opt).save();
+    if (due > 0 && upiDeepLink && window.QRCode) {
+        // Generate QR code first, then save PDF after it renders
+        const qrContainer = billArea.querySelector('#bill-qr-container');
+        if (qrContainer) {
+            try {
+                new QRCode(qrContainer, {
+                    text: upiDeepLink,
+                    width: 100,
+                    height: 100,
+                    colorDark: '#166534',
+                    colorLight: '#f0fdf4',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+                // Wait for QR to render before generating PDF
+                setTimeout(generateAndSave, 300);
+            } catch (e) {
+                generateAndSave();
+            }
+        } else {
+            generateAndSave();
+        }
+    } else {
+        generateAndSave();
+    }
 }
 
 // ----------------------------------------------------
@@ -1969,48 +2130,236 @@ const CHATBOT_RESPONSES = {
 function toggleChatbot() {
     const chatDrawer = document.getElementById("chatbot-drawer");
     chatDrawer.classList.toggle("active");
-    
-    // Inject welcoming message if empty
     const body = document.getElementById("chatbot-body");
     if (body.children.length === 0) {
-        appendChatMessage("AI Assistant", "Welcome to PGSmart AI Assistant. How can I help you manage the property today? Ask me about **rooms**, **dues**, **wifi**, **food**, or type **help**.", "bot");
+        appendChatMessage("AI Assistant", "👋 Hi! I'm your PG AI Assistant powered by Claude.\n\nAsk me anything about your PG — like:\n• *Who hasn't paid this month?*\n• *How many rooms are vacant?*\n• *What's my total collection?*\n• *Which tenants are vacating?*", "bot");
     }
 }
 
 function appendChatMessage(sender, text, type) {
     const body = document.getElementById("chatbot-body");
     if (!body) return;
-
     const bubble = document.createElement("div");
     bubble.className = `chat-bubble bubble-${type}`;
     bubble.innerHTML = `
         <div class="chat-sender">${sender}</div>
-        <div class="chat-text">${text.replace(/\n/g, '<br>')}</div>
+        <div class="chat-text">${text.replace(/\n/g, '<br>').replace(/\*(.*?)\*/g, '<strong>$1</strong>')}</div>
     `;
     body.appendChild(bubble);
     body.scrollTop = body.scrollHeight;
 }
 
+function buildPGContext() {
+    const totalRent      = state.tenants.reduce((s, t) => s + (t.rent || 0), 0);
+    const totalDue       = state.tenants.reduce((s, t) => s + (t.due  || 0), 0);
+    const totalCollected = totalRent - totalDue;
+    const totalBeds      = state.rooms.reduce((s, r) => s + (r.capacity || 0), 0);
+    const occupied       = state.tenants.length;
+    const vacant         = Math.max(0, totalBeds - occupied);
+    const unpaid         = state.tenants.filter(t => t.status !== 'Paid');
+    const vacating       = state.tenants.filter(t => t.vacating);
+
+    return `You are a smart AI assistant for a PG (Paying Guest) rental management app called "${state.settings.pgName || 'PGSmart'}".
+Answer the owner's questions using ONLY the live data below. Be concise, specific, and helpful.
+Use bullet points for lists. Keep answers under 120 words. Never make up data.
+
+=== LIVE PG DATA ===
+Total Tenants: ${state.tenants.length}
+Paid Tenants: ${state.tenants.filter(t=>t.status==='Paid').length}
+Unpaid/Overdue: ${unpaid.length}
+Vacating Soon: ${vacating.length}
+Total Rooms: ${state.rooms.length} | Total Beds: ${totalBeds} | Occupied: ${occupied} | Vacant: ${vacant}
+Total Rent Expected: ₹${totalRent.toLocaleString('en-IN')}
+Total Collected: ₹${totalCollected.toLocaleString('en-IN')}
+Total Dues Pending: ₹${totalDue.toLocaleString('en-IN')}
+
+=== TENANTS ===
+${state.tenants.map(t=>`• ${t.name} | Room ${t.room} | Rent ₹${t.rent||0} | Due ₹${t.due||0} | ${t.status}${t.vacating?' | VACATING '+(t.vacatingDate||'soon'):''}`).join('\n') || 'No tenants yet.'}
+
+=== ROOMS ===
+${state.rooms.map(r=>`• Room ${r.roomNumber} | ${r.type} | Capacity ${r.capacity||0} | Rent ₹${r.rent||0}`).join('\n') || 'No rooms yet.'}
+
+=== OPEN COMPLAINTS ===
+${state.complaints.filter(c=>c.status!=='Resolved').map(c=>`• Room ${c.room} | ${c.issue} | ${c.severity}`).join('\n') || 'No open complaints.'}`;
+}
+
+// ── Smart local AI engine — reads live PG data, no API key needed ──
+let aiChatHistory = [];
+
+function smartAIAnswer(query) {
+    const q   = query.toLowerCase();
+    const now = new Date();
+    const pgName = state.settings.pgName || 'your PG';
+
+    // ── helpers ──
+    const fmt  = n  => '₹' + (n || 0).toLocaleString('en-IN');
+    const pct  = (a, b) => b > 0 ? Math.round((a / b) * 100) + '%' : '0%';
+    const list = (arr, fn) => arr.length ? arr.map(fn).join('\n') : null;
+
+    const totalRent      = state.tenants.reduce((s, t) => s + (t.rent || 0), 0);
+    const totalDue       = state.tenants.reduce((s, t) => s + (t.due  || 0), 0);
+    const totalCollected = totalRent - totalDue;
+    const totalBeds      = state.rooms.reduce((s, r) => s + (r.capacity || 0), 0);
+    const unpaid         = state.tenants.filter(t => (t.due || 0) > 0);
+    const paid           = state.tenants.filter(t => (t.due || 0) <= 0 && t.status === 'Paid');
+    const vacating       = state.tenants.filter(t => t.vacating);
+    const openComplaints = state.complaints.filter(c => c.status !== 'Resolved');
+    const vacantBeds     = Math.max(0, totalBeds - state.tenants.length);
+    const vacantRooms    = state.rooms.filter(r => {
+        const occ = state.tenants.filter(t => t.room === r.roomNumber).length;
+        return occ < (r.capacity || 0);
+    });
+
+    // ── WHO HASN'T PAID ──
+    if (q.match(/not paid|unpaid|pending|overdue|dues|due/)) {
+        if (unpaid.length === 0) return `🎉 Great news! All ${state.tenants.length} tenants have paid their rent for this month.`;
+        return `⚠️ *${unpaid.length} tenant(s) haven't paid:*\n\n` +
+            list(unpaid, t => `• *${t.name}* (Room ${t.room}) — Due: ${fmt(t.due)}`) +
+            `\n\n💰 Total outstanding: *${fmt(totalDue)}*`;
+    }
+
+    // ── WHO HAS PAID ──
+    if (q.match(/who.*paid|paid.*who|paid tenant/)) {
+        if (paid.length === 0) return `No tenants have been marked as fully paid yet this month.`;
+        return `✅ *${paid.length} tenant(s) have paid:*\n\n` +
+            list(paid, t => `• *${t.name}* (Room ${t.room}) — ${fmt(t.rent)}`) +
+            `\n\n💰 Total collected: *${fmt(totalCollected)}*`;
+    }
+
+    // ── COLLECTION / REVENUE ──
+    if (q.match(/collect|revenue|income|total.*month|month.*total|how much.*collect/)) {
+        return `💰 *${now.toLocaleString('en-IN', {month:'long'})} Collection Summary*\n\n` +
+            `• Expected: *${fmt(totalRent)}*\n` +
+            `• Collected: *${fmt(totalCollected)}*\n` +
+            `• Pending: *${fmt(totalDue)}*\n` +
+            `• Collection rate: *${pct(totalCollected, totalRent)}*\n\n` +
+            `${unpaid.length > 0 ? `⚠️ ${unpaid.length} tenant(s) still pending.` : '🎉 All payments collected!'}`;
+    }
+
+    // ── VACANT ROOMS / BEDS ──
+    if (q.match(/vacant|empty|available|free.*room|room.*free|unoccupied/)) {
+        if (vacantRooms.length === 0) return `🏠 All rooms are currently fully occupied! No vacancies at the moment.`;
+        return `🚪 *${vacantRooms.length} room(s) with vacancies:*\n\n` +
+            list(vacantRooms, r => {
+                const occ = state.tenants.filter(t => t.room === r.roomNumber).length;
+                const free = (r.capacity || 0) - occ;
+                return `• Room *${r.roomNumber}* (${r.type}) — ${free} bed(s) free | ${fmt(r.rent)}/month`;
+            }) +
+            `\n\n📊 Total vacant beds: *${vacantBeds}* out of ${totalBeds}`;
+    }
+
+    // ── OCCUPANCY ──
+    if (q.match(/occupan|occupi|how many.*tenant|tenant.*count|total tenant/)) {
+        return `📊 *Occupancy Summary*\n\n` +
+            `• Total beds: *${totalBeds}*\n` +
+            `• Occupied: *${state.tenants.length}*\n` +
+            `• Vacant: *${vacantBeds}*\n` +
+            `• Occupancy rate: *${pct(state.tenants.length, totalBeds)}*\n` +
+            `• Total rooms: *${state.rooms.length}*`;
+    }
+
+    // ── VACATING ──
+    if (q.match(/vacat|leav|moving out|notice/)) {
+        if (vacating.length === 0) return `✅ No tenants are currently marked as vacating. All tenants are staying.`;
+        return `🚶 *${vacating.length} tenant(s) vacating soon:*\n\n` +
+            list(vacating, t => `• *${t.name}* (Room ${t.room}) — ${t.vacatingDate ? 'on ' + t.vacatingDate : 'date not set'}\n  Deposit: ${fmt(t.advance)} | Due: ${fmt(t.due)}`) +
+            `\n\n💡 Go to the Deposits tab to calculate their refunds.`;
+    }
+
+    // ── COMPLAINTS ──
+    if (q.match(/complaint|issue|problem|repair|maintenance|open complaint/)) {
+        if (openComplaints.length === 0) return `✅ No open complaints right now. All issues have been resolved!`;
+        return `🔧 *${openComplaints.length} open complaint(s):*\n\n` +
+            list(openComplaints, c => `• Room *${c.room}* — ${c.issue} | *${c.severity}* | ${c.status}`) +
+            `\n\n💡 Go to the Complaints tab to update their status.`;
+    }
+
+    // ── HIGHEST / LOWEST RENT ──
+    if (q.match(/highest|most.*rent|expensive|top rent/)) {
+        const sorted = [...state.tenants].sort((a, b) => (b.rent||0) - (a.rent||0));
+        if (!sorted.length) return 'No tenants found.';
+        const top = sorted[0];
+        return `🏆 *Highest rent tenant:*\n\n• *${top.name}* (Room ${top.room}) pays *${fmt(top.rent)}/month*\n\nTop 3:\n` +
+            sorted.slice(0,3).map((t,i) => `${i+1}. ${t.name} — ${fmt(t.rent)}`).join('\n');
+    }
+
+    if (q.match(/lowest|least.*rent|cheapest/)) {
+        const sorted = [...state.tenants].sort((a, b) => (a.rent||0) - (b.rent||0));
+        if (!sorted.length) return 'No tenants found.';
+        const bot = sorted[0];
+        return `• *${bot.name}* (Room ${bot.room}) pays the lowest rent: *${fmt(bot.rent)}/month*`;
+    }
+
+    // ── SPECIFIC TENANT LOOKUP ──
+    const tenantMatch = state.tenants.find(t =>
+        t.name.toLowerCase().includes(q) || t.room.toString() === q.match(/room\s*(\w+)/)?.[1]
+    );
+    if (tenantMatch) {
+        const t = tenantMatch;
+        return `👤 *${t.name}*\n\n` +
+            `• Room: *${t.room}*\n` +
+            `• Phone: ${t.phone || '—'}\n` +
+            `• Rent: *${fmt(t.rent)}/month*\n` +
+            `• Status: *${t.status}*\n` +
+            `• Due: *${fmt(t.due)}*\n` +
+            `• Deposit: ${fmt(t.advance)}\n` +
+            `• Joined: ${t.joiningDate || '—'}\n` +
+            `${t.vacating ? `• 🚪 *Vacating on ${t.vacatingDate || 'soon'}*` : '• Staying ✅'}`;
+    }
+
+    // ── SUMMARY / OVERVIEW ──
+    if (q.match(/summary|overview|dashboard|report|status|all|everything|tell me/)) {
+        return `📋 *${pgName} — Quick Summary*\n\n` +
+            `👥 Tenants: *${state.tenants.length}* (${paid.length} paid, ${unpaid.length} pending)\n` +
+            `🏠 Rooms: *${state.rooms.length}* | Beds: ${totalBeds} | Vacant: ${vacantBeds}\n` +
+            `💰 Collected: *${fmt(totalCollected)}* / ${fmt(totalRent)}\n` +
+            `⚠️ Dues: *${fmt(totalDue)}*\n` +
+            `🔧 Open complaints: *${openComplaints.length}*\n` +
+            `🚶 Vacating: *${vacating.length}*`;
+    }
+
+    // ── HELP ──
+    if (q.match(/help|what can|commands|what.*ask/)) {
+        return `🤖 *I can answer questions like:*\n\n` +
+            `• Who hasn't paid this month?\n` +
+            `• How many rooms are vacant?\n` +
+            `• What's my total collection?\n` +
+            `• Which tenants are vacating?\n` +
+            `• Show me open complaints\n` +
+            `• Who pays the highest rent?\n` +
+            `• Give me a full summary\n` +
+            `• Tell me about [tenant name]`;
+    }
+
+    // ── DEFAULT ──
+    return `I'm not sure about that. Try asking:\n• *"Who hasn't paid?"*\n• *"Vacant rooms?"*\n• *"Total collection?"*\n• *"Summary"*\n\nType *help* to see all questions I can answer.`;
+}
+
 function sendChatbotMessage() {
     const input = document.getElementById("chatbot-input-field");
-    const query = input.value.trim().toLowerCase();
+    const query = input.value.trim();
     if (!query) return;
 
-    appendChatMessage("You", input.value, "user");
+    appendChatMessage("You", query, "user");
     input.value = "";
+    aiChatHistory.push({ role: "user", content: query });
+
+    // Show typing indicator briefly for natural feel
+    const body = document.getElementById("chatbot-body");
+    const typing = document.createElement("div");
+    typing.className = "chat-bubble bubble-bot";
+    typing.id = "ai-typing-indicator";
+    typing.innerHTML = `<div class="chat-sender">AI Assistant</div><div class="chat-text" style="opacity:0.5;font-style:italic;">Thinking...</div>`;
+    body.appendChild(typing);
+    body.scrollTop = body.scrollHeight;
 
     setTimeout(() => {
-        let answer = "I'm sorry, I didn't quite catch that. Type **help** to see valid commands or ask about **rooms** or **dues**.";
-        
-        for (let keyword in CHATBOT_RESPONSES) {
-            if (query.includes(keyword)) {
-                const response = CHATBOT_RESPONSES[keyword];
-                answer = typeof response === 'function' ? response() : response;
-                break;
-            }
-        }
+        const t = document.getElementById("ai-typing-indicator");
+        if (t) t.remove();
+        const answer = smartAIAnswer(query);
+        aiChatHistory.push({ role: "assistant", content: answer });
         appendChatMessage("AI Assistant", answer, "bot");
-    }, 450);
+    }, 400);
 }
 
 // ----------------------------------------------------
@@ -2378,6 +2727,7 @@ async function handleLogin(e) {
         await initDatabase();
         checkMonthlyRentCycle();
         checkAuth();
+        checkRentReminder();
         logAudit('LOGIN', `Logged in as ${currentUser.username} (${currentUser.role})`);
         closeAuthModal();
 
@@ -2438,7 +2788,12 @@ async function handleLogout() {
     currentUser = null;
     sessionStorage.removeItem('pgsmart_current_user');
     showToast("Logged out to Guest Mode.", "info");
-    
+
+    // Clear AI chat history on logout
+    aiChatHistory = [];
+    const chatBody = document.getElementById("chatbot-body");
+    if (chatBody) chatBody.innerHTML = '';
+
     // Re-initialize database back to guest partition
     await initDatabase();
     checkMonthlyRentCycle();
@@ -2926,6 +3281,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initDatabase();
     checkMonthlyRentCycle();
     checkAuth();
+    checkRentReminder();
     loadSavedCredentials();
 
     // Bind Login & Signup Forms

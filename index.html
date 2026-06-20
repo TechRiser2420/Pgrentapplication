@@ -7,6 +7,15 @@
     
     <!-- CSS Stylesheet -->
     <link rel="stylesheet" href="style.css">
+    <style>
+    .ai-chip{padding:6px 14px;border-radius:20px;border:1px solid var(--border-color);background:var(--glass-bg);color:var(--text-secondary);font-size:0.82rem;cursor:pointer;transition:all .15s;}
+    .ai-chip:hover{border-color:var(--accent);color:var(--accent);}
+    .ai-msg{display:flex;gap:10px;align-items:flex-start;}
+    .ai-msg-user{flex-direction:row-reverse;}
+    .ai-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;background:var(--glass-bg);border:1px solid var(--border-color);}
+    .ai-bubble{padding:10px 14px;border-radius:12px;font-size:0.88rem;line-height:1.6;max-width:85%;background:var(--bg-secondary);border:1px solid var(--border-color);}
+    .ai-msg-user .ai-bubble{background:var(--accent);color:#0a0a0a;border-color:var(--accent);}
+    </style>
 </head>
 <body>
 
@@ -120,6 +129,10 @@
                     <i data-lucide="shield-alert"></i>
                     <span>Complaints</span>
                 </li>
+                <li data-view="deposits" id="nav-deposits" style="display: none;">
+                    <i data-lucide="piggy-bank"></i>
+                    <span>Deposits</span>
+                </li>
                 <li data-view="users" id="nav-users" style="display: none;">
                     <i data-lucide="shield-check"></i>
                     <span>System Users</span>
@@ -139,6 +152,10 @@
                 <li data-view="superadmin" id="nav-superadmin" style="display: none;">
                     <i data-lucide="settings-2"></i>
                     <span>Super Settings</span>
+                </li>
+                <li data-view="aiassistant" id="nav-aiassistant" style="display: none;">
+                    <i data-lucide="bot"></i>
+                    <span>AI Assistant</span>
                 </li>
             </ul>
 
@@ -640,11 +657,87 @@
                 </div>
             </section>
 
+            <!-- ====================================================
+                 VIEW: ADVANCE DEPOSIT TRACKER
+                 ==================================================== -->
+            <section id="view-deposits" class="content-section">
+                <div class="action-filter-bar" style="margin-bottom:25px;">
+                    <div class="filter-left">
+                        <h3 style="font-size:1.1rem;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+                            <i data-lucide="piggy-bank" style="color:var(--accent);"></i> Security Deposit Tracker
+                        </h3>
+                    </div>
+                </div>
+                <div class="stats-grid" style="margin-bottom:24px;">
+                    <div class="stat-card"><div class="stat-card-header"><span class="stat-card-title">Total Deposits Held</span><i data-lucide="piggy-bank"></i></div><div id="dep-total" class="stat-card-value">₹0</div><div class="stat-card-glow-bg"></div></div>
+                    <div class="stat-card"><div class="stat-card-header"><span class="stat-card-title">Refunds Due</span><i data-lucide="arrow-left-right"></i></div><div id="dep-refunds" class="stat-card-value" style="color:#f59e0b;">₹0</div><div class="stat-card-glow-bg"></div></div>
+                    <div class="stat-card"><div class="stat-card-header"><span class="stat-card-title">Vacating Tenants</span><i data-lucide="log-out"></i></div><div id="dep-vacating" class="stat-card-value" style="color:#ef4444;">0</div><div class="stat-card-glow-bg"></div></div>
+                    <div class="stat-card"><div class="stat-card-header"><span class="stat-card-title">Tenants with Deposit</span><i data-lucide="users"></i></div><div id="dep-count" class="stat-card-value">0</div><div class="stat-card-glow-bg"></div></div>
+                </div>
+                <div class="table-responsive-wrapper">
+                    <table class="custom-glass-table">
+                        <thead><tr><th>Tenant</th><th>Room</th><th>Deposit (₹)</th><th>Rent Due (₹)</th><th>Vacating?</th><th>Est. Refund (₹)</th><th>Actions</th></tr></thead>
+                        <tbody id="deposit-table-rows"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ====================================================
+                 VIEW: AI ASSISTANT
+                 ==================================================== -->
+            <section id="view-aiassistant" class="content-section">
+                <div class="action-filter-bar" style="margin-bottom:25px;">
+                    <div class="filter-left">
+                        <h3 style="font-size:1.1rem;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+                            <i data-lucide="bot" style="color:var(--accent);"></i> AI Assistant — Ask Your PG
+                        </h3>
+                    </div>
+                    <button onclick="clearAIChat()" style="padding:7px 14px;border-radius:8px;border:1px solid var(--border-color);background:none;color:var(--text-secondary);cursor:pointer;font-size:0.82rem;">Clear Chat</button>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+                    <button onclick="askAI('Who has not paid rent this month?')" class="ai-chip">💸 Who hasn't paid?</button>
+                    <button onclick="askAI('How many rooms are vacant right now?')" class="ai-chip">🚪 Vacant rooms?</button>
+                    <button onclick="askAI('What is my total rent collection this month?')" class="ai-chip">💰 Total collection?</button>
+                    <button onclick="askAI('Which tenants are vacating soon?')" class="ai-chip">🚶 Vacating soon?</button>
+                    <button onclick="askAI('Give me a summary of all open complaints')" class="ai-chip">🔧 Complaints?</button>
+                    <button onclick="askAI('Which room has the highest rent?')" class="ai-chip">📊 Highest rent?</button>
+                </div>
+                <div id="ai-chat-window" style="min-height:320px;max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:16px;background:var(--glass-bg);border:1px solid var(--border-color);border-radius:16px;margin-bottom:16px;">
+                    <div class="ai-msg ai-msg-bot">
+                        <div class="ai-avatar">🤖</div>
+                        <div class="ai-bubble">Hi! I'm your PG AI assistant. Ask me anything about your tenants, rooms, rent collection or complaints — I answer from your live data!</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <input id="ai-input" type="text" placeholder="e.g. Who hasn't paid this month?"
+                        style="flex:1;padding:12px 16px;border-radius:10px;border:1px solid var(--border-color);background:var(--glass-bg);color:var(--text-primary);font-size:0.9rem;"
+                        onkeydown="if(event.key==='Enter')sendAIMessage()">
+                    <button onclick="sendAIMessage()" class="btn-primary-neon" style="padding:0 20px;height:48px;display:flex;align-items:center;gap:6px;">
+                        <i data-lucide="send" style="width:16px;height:16px;"></i> Ask
+                    </button>
+                </div>
+            </section>
+
         </main>
     </div>
 
     <!-- ANNOUNCEMENT BANNER (shown on dashboard) -->
     <div id="announce-banner" style="display:none;position:fixed;top:70px;left:0;right:0;z-index:999;padding:12px 24px;font-size:0.88rem;font-weight:600;text-align:center;"></div>
+
+    <!-- Rent overdue reminder banner (browser-based daily check) -->
+    <div id="rent-reminder-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:1000;background:#7f1d1d;color:#fecaca;padding:0;box-shadow:0 4px 24px rgba(0,0,0,0.4);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid rgba(254,202,202,0.2);">
+            <div style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:0.92rem;">
+                <span style="font-size:1.1rem;">⚠️</span>
+                <span id="rent-reminder-title">Rent Overdue Reminder</span>
+            </div>
+            <button onclick="closeRentReminder()" style="background:none;border:none;color:#fecaca;cursor:pointer;font-size:1.1rem;padding:4px 8px;border-radius:6px;opacity:0.8;">✕</button>
+        </div>
+        <div id="rent-reminder-list" style="padding:10px 20px;display:flex;flex-wrap:wrap;gap:8px;max-height:180px;overflow-y:auto;"></div>
+        <div style="padding:8px 20px;font-size:0.78rem;opacity:0.7;border-top:1px solid rgba(254,202,202,0.15);">
+            Next auto-reminder in 5 days · <span id="rent-reminder-next-date"></span>
+        </div>
+    </div>
 
     <!-- OWNER DETAIL MODAL -->
     <div id="owner-modal" class="modal-overlay">
@@ -705,6 +798,38 @@
 
             <div style="margin-top:16px;text-align:right;">
                 <button onclick="closeOwnerModal()" style="padding:9px 20px;border-radius:8px;border:1px solid var(--border-color);background:var(--glass-bg);color:var(--text-primary);cursor:pointer;font-size:0.85rem;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DEPOSIT REFUND MODAL -->
+    <div id="deposit-refund-modal" class="modal-overlay">
+        <div class="modal-content-box" style="max-width:480px;">
+            <div class="modal-header-row">
+                <h3 class="modal-title">💰 Deposit Refund Calculator</h3>
+                <button class="modal-close-btn" onclick="closeDepositRefundModal()"><i data-lucide="x"></i></button>
+            </div>
+            <div style="margin-top:16px;display:flex;flex-direction:column;gap:14px;">
+                <input type="hidden" id="dep-tenant-id">
+                <div id="dep-summary" style="background:var(--glass-bg);border:1px solid var(--border-color);border-radius:10px;padding:14px;font-size:0.88rem;line-height:2;"></div>
+                <div class="form-input-group">
+                    <label>Damage / Repair Deduction (₹)</label>
+                    <input id="dep-damage" type="number" min="0" value="0" class="form-control" oninput="recalcRefund()">
+                </div>
+                <div class="form-input-group">
+                    <label>Notice Period Penalty (₹)</label>
+                    <input id="dep-notice" type="number" min="0" value="0" class="form-control" oninput="recalcRefund()">
+                </div>
+                <div style="background:var(--glass-bg);border:1px solid var(--accent);border-radius:10px;padding:14px;display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-weight:600;color:var(--text-primary);">Net Refund Amount</span>
+                    <span id="dep-net-refund" style="font-size:1.4rem;font-weight:700;color:#10b981;">₹0</span>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button onclick="sendDepositRefundWhatsApp()" class="btn-primary-action" style="flex:1;padding:10px;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--accent);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;font-weight:600;">
+                        <i data-lucide="message-circle" style="width:15px;height:15px;"></i> Send via WhatsApp
+                    </button>
+                    <button onclick="closeDepositRefundModal()" style="flex:1;padding:10px;background:var(--glass-bg);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);cursor:pointer;">Cancel</button>
+                </div>
             </div>
         </div>
     </div>
@@ -786,8 +911,12 @@
                     </div>
                     
                     <div class="form-input-group">
-                        <label for="form-tenant-advance">Advance Paid (₹)</label>
-                        <input id="form-tenant-advance" type="number" value="0">
+                        <label for="form-tenant-advance">Security Deposit (₹)</label>
+                        <input id="form-tenant-advance" type="number" value="0" placeholder="e.g. 10000">
+                    </div>
+                    <div class="form-input-group">
+                        <label for="form-deposit-date">Deposit Received Date</label>
+                        <input id="form-deposit-date" type="date">
                     </div>
                     
                     <div class="form-input-group">
@@ -1037,6 +1166,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <!-- SheetJS Excel Export System -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- QR Code generator for UPI payment in bills -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     
     <!-- Firebase App and Realtime Database Compat SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
